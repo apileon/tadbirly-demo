@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Tadbirly",
+    "slug": "tadbirly",
+    "version": "0.1.0",
+    "scheme": "tadbirly",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#17203a",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "uz.tadbirly.app"
+    },
+    "android": {
+      "package": "uz.tadbirly.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#17203a"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "supabaseUrl": "https://mezvvxosdcddninqgvjz.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lenZ2eG9zZGNkZG5pbnFndmp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4MjkwNzcsImV4cCI6MjEwMzQwNTA3N30.klB0uSYHnKfelel6LjWce0qfcufwXcvyC3k7BMf06pc",
+      "router": {},
+      "eas": {
+        "projectId": "2a328beb-3935-412d-b19e-db24d527a02f"
+      }
+    }
+  }
+}
