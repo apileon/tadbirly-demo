@@ -1,6 +1,55 @@
 import React from 'react';
-import { Text, TouchableOpacity, View, ActivityIndicator, StyleSheet } from 'react-native';
-import { colors, radius } from '../lib/theme';
+import { Text, TouchableOpacity, View, ActivityIndicator, StyleSheet, Image } from 'react-native';
+import { colors, radius, avatarColor, initialsOf } from '../lib/theme';
+
+// The Tadbirly mark: two offset T's, lime behind and deep green in front.
+// Drawn with plain views so it stays crisp at any size and needs no image.
+export function Logo({ size = 40, variant = 'dark', style }) {
+  const f = (n) => size * n;
+  const bar = (left, top, w, h, color) => ({
+    position: 'absolute',
+    left: f(left), top: f(top), width: f(w), height: f(h),
+    borderRadius: f(0.06), backgroundColor: color,
+  });
+  const light = variant === 'light';
+  const tile = light ? '#ffffff' : '#111511';   // near-black
+  const back = '#c9f24d';                        // lime T, behind
+  const front = light ? '#14532d' : '#ffffff';   // front T
+  return (
+    <View
+      style={[
+        {
+          width: size, height: size, borderRadius: f(0.27),
+          backgroundColor: tile,
+          borderWidth: light ? Math.max(1, f(0.02)) : 0,
+          borderColor: '#e2e8dc',
+          overflow: 'hidden',
+        },
+        style,
+      ]}
+    >
+      <View style={bar(0.247, 0.333, 0.48, 0.12, back)} />
+      <View style={bar(0.427, 0.333, 0.12, 0.413, back)} />
+      <View style={bar(0.313, 0.253, 0.48, 0.12, front)} />
+      <View style={bar(0.493, 0.253, 0.12, 0.413, front)} />
+    </View>
+  );
+}
+
+// Profile picture, or initials on a colour that's always the same for that person.
+export function Avatar({ uri, name, id, size = 44, style }) {
+  const box = { width: size, height: size, borderRadius: size / 2 };
+  if (uri) {
+    return <Image source={{ uri }} style={[box, { backgroundColor: colors.line }, style]} resizeMode="cover" />;
+  }
+  return (
+    <View style={[box, { backgroundColor: avatarColor(id), alignItems: 'center', justifyContent: 'center' }, style]}>
+      <Text style={{ color: '#fff', fontWeight: '800', fontSize: Math.round(size * 0.38) }}>
+        {initialsOf(name)}
+      </Text>
+    </View>
+  );
+}
 
 export function Button({ title, onPress, variant = 'primary', disabled, loading, style }) {
   const bg = {
@@ -8,6 +57,7 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
     green: colors.accent,
     ghost: colors.bg,
     dark: colors.ink,
+    danger: colors.danger,
   }[variant];
   const fg = variant === 'ghost' ? colors.ink : '#fff';
   return (
@@ -56,7 +106,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   btnText: { fontSize: 15, fontWeight: '700' },
-  tag: { alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 9, borderRadius: 8 },
+  tag: { alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 11, borderRadius: radius.pill },
   tagText: { fontSize: 11, fontWeight: '700' },
   card: {
     backgroundColor: colors.card,

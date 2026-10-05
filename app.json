@@ -2,35 +2,89 @@
   "expo": {
     "name": "Tadbirly",
     "slug": "tadbirly",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "scheme": "tadbirly",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-ios.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "backgroundColor": "#17203a",
+      "image": "./assets/splash-icon.png",
+      "backgroundColor": "#111511",
       "resizeMode": "contain"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "uz.tadbirly.app"
+      "supportsTablet": false,
+      "bundleIdentifier": "uz.tadbirly.app",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Tadbirly uses your photos so you can set a profile picture, cover and event images.",
+        "NSCameraUsageDescription": "Tadbirly uses your camera so you can take a profile picture, cover and event images.",
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      }
     },
     "android": {
       "package": "uz.tadbirly.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#17203a"
-      }
+        "backgroundColor": "#111511"
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "output": "single",
+      "name": "Tadbirly",
+      "shortName": "Tadbirly",
+      "themeColor": "#111511",
+      "backgroundColor": "#edf1e8",
+      "display": "standalone",
+      "favicon": "./assets/icon.png"
     },
     "plugins": [
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production",
+          "iPhoneDeploymentTarget": "15.1",
+          "smallIcons": [
+            "./assets/notification-icon.png"
+          ],
+          "smallIconAccentColor": "#2d5a3d"
+        }
+      ],
       "expo-router",
-      "expo-secure-store"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Tadbirly uses your photos so you can set a profile picture, cover and event images.",
+          "cameraPermission": "Tadbirly uses your camera so you can take a profile picture, cover and event images.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "backgroundColor": "#111511",
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-web-browser",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": false
@@ -38,6 +92,7 @@
     "extra": {
       "supabaseUrl": "https://mezvvxosdcddninqgvjz.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lenZ2eG9zZGNkZG5pbnFndmp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4MjkwNzcsImV4cCI6MjEwMzQwNTA3N30.klB0uSYHnKfelel6LjWce0qfcufwXcvyC3k7BMf06pc",
+      "oneSignalAppId": "abfc69f5-a74e-45ae-8e4b-0d42369acd05",
       "router": {},
       "eas": {
         "projectId": "2a328beb-3935-412d-b19e-db24d527a02f"

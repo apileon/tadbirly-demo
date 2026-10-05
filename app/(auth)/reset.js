@@ -1,9 +1,24 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Platform } from 'react-native';
+import { notify } from '../../lib/notify';
 import { Link } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui';
 import { colors, radius } from '../../lib/theme';
+
+// Where the emailed link lands: app/reset-password.js. On web that's this same
+// site, whatever address it's served from. A native build has no web address
+// of its own, so its link opens the live web app, which finishes the reset;
+// the new password then works in the app too. The old 'tadbirly://' link
+// opened nothing on the web, which is why nobody could reset a password.
+// The address must be listed in Supabase → Authentication → URL Configuration
+// → Redirect URLs, or Supabase silently sends people to the Site URL instead.
+function resetRedirectUrl() {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return `${window.location.origin}/reset-password`;
+  }
+  return 'https://tadbirly.expo.app/reset-password';
+}
 
 export default function Reset() {
   const [email, setEmail] = useState('');
@@ -11,14 +26,13 @@ export default function Reset() {
   const [sent, setSent] = useState(false);
 
   async function sendReset() {
-    if (!email.trim()) return Alert.alert('Enter your email');
+    if (!email.trim()) return notify('Enter your email');
     setLoading(true);
-    // Sends a recovery email. Configure the redirect in Supabase > Auth > URL config.
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: 'tadbirly://reset-callback',
+      redirectTo: resetRedirectUrl(),
     });
     setLoading(false);
-    if (error) Alert.alert('Could not send', error.message);
+    if (error) notify('Could not send', error.message);
     else setSent(true);
   }
 
@@ -27,7 +41,7 @@ export default function Reset() {
       <Text style={styles.h1}>Reset your password</Text>
       {sent ? (
         <Text style={styles.body}>
-          If an account exists for {email}, a reset link is on its way. Check your inbox.
+          If an account exists for {email}, a reset link is on its way. Check your inbox (and spam), then open the link to choose a new password.
         </Text>
       ) : (
         <>
@@ -41,6 +55,7 @@ export default function Reset() {
             placeholderTextColor={colors.muted}
             value={email}
             onChangeText={setEmail}
+            onSubmitEditing={sendReset}
           />
           <Button title="Send reset link" onPress={sendReset} loading={loading} style={{ marginTop: 18 }} />
         </>

@@ -1,90 +1,277 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors, radius } from '../lib/theme';
 import { Button } from '../components/ui';
+import { useAuth } from '../lib/auth';
 import { deleteAccount } from '../lib/moderation';
+import { notify, confirmAsync } from '../lib/notify';
 
-// Short in-app copy. The FULL policy must also be hosted at a public URL
-// (e.g. https://tadbirly.uz/privacy) and linked in your store listings.
-export default function Legal() {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
+// ============================================================
+//  Privacy Policy · Terms of Use · Community Rules · Contact
+//  Shown in the app at /legal, publicly at /privacy, and inside the
+//  sign-up screen. Store listings should link to <PUBLIC_URL>/privacy.
+// ============================================================
 
-  function confirmDelete() {
-    Alert.alert(
-      'Delete account?',
-      'This permanently removes your profile, posts, applications and messages. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setBusy(true);
-              await deleteAccount();
-            } catch (e) {
-              setBusy(false);
-              Alert.alert('Could not delete', e.message ?? 'Try again, or contact support.');
-            }
-          },
-        },
-      ]
-    );
-  }
+// ⚠️ DEVELOPER — CHECK THESE BEFORE SUBMITTING TO THE STORES ⚠️
+// SUPPORT_EMAIL must be a real inbox someone reads daily: Apple and Google
+// both check it, and users use it to request data deletion.
+export const SUPPORT_EMAIL = 'support@tadbirly.uz';      // ← SUPPORT_EMAIL: replace with your monitored inbox
+export const OPERATOR_NAME = 'Tadbirly';                  // ← the legal name of the person/company running the app
+export const PUBLIC_URL = 'https://tadbirly.expo.app';    // ← where the web app is hosted
+export const POLICY_UPDATED = '5 October 2026';
 
+const open = (url) => Linking.openURL(url).catch(() => {});
+const mail = (subject) => open(`mailto:${SUPPORT_EMAIL}${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`);
+
+// A tappable link inside running text.
+function A({ href, onPress, children }) {
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 18 }}>
-      <Text style={styles.h1}>Privacy & Terms</Text>
-
-      <Section title="Community rules">
-        Tadbirly has zero tolerance for abusive, harmful, or spam content. Posts may be reviewed.
-        You can report any post or user, and block users you don't want to interact with. Accounts
-        that break the rules are removed.
-      </Section>
-
-      <Section title="Your data">
-        We store your name, email, profile details and the posts, applications and messages you
-        create, in order to run the service. We do not sell your data. You can delete your account
-        at any time below.
-      </Section>
-
-      <Section title="Terms of use">
-        By using Tadbirly you agree to post accurate information, treat other users respectfully,
-        and follow local laws. Tadbirly is provided "as is" during this early access period.
-      </Section>
-
-      <Text style={styles.note}>
-        Full policy: https://tadbirly.uz/privacy  ·  Contact: support@tadbirly.uz
-      </Text>
-
-      <View style={styles.danger}>
-        <Text style={styles.dangerTitle}>Danger zone</Text>
-        <Button title="Delete my account" variant="primary" style={styles.delBtn} loading={busy} onPress={confirmDelete} />
-      </View>
-
-      <Button title="Back" variant="ghost" style={{ marginTop: 12 }} onPress={() => router.back()} />
-    </ScrollView>
+    <Text style={s.link} accessibilityRole="link" onPress={onPress ?? (() => open(href))}>
+      {children}
+    </Text>
   );
+}
+function Mail({ subject }) {
+  return <A onPress={() => mail(subject)}>{SUPPORT_EMAIL}</A>;
 }
 
 function Section({ title, children }) {
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <Text style={styles.body}>{children}</Text>
+    <View style={s.section}>
+      <Text style={s.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+const P = ({ children }) => <Text style={s.p}>{children}</Text>;
+const H = ({ children }) => <Text style={s.h3}>{children}</Text>;
+const Li = ({ children }) => (
+  <View style={s.li}>
+    <Text style={s.bullet}>•</Text>
+    <Text style={s.liText}>{children}</Text>
+  </View>
+);
+
+// The whole document. Used by /legal, /privacy and the sign-up screen.
+export function LegalDocument() {
+  return (
+    <View>
+      <Text style={s.updated}>Last updated: {POLICY_UPDATED}</Text>
+
+      <Section title="In short">
+        <P>
+          Tadbirly helps students find events, apply, build teams and connect. We collect only what is needed to
+          run it, we never sell your data, there are no ads and no tracking, and you can delete your account and
+          its data at any time from the app. Abusive content and abusive users are not tolerated: you can report
+          or block anyone, and we act on reports within 24 hours.
+        </P>
+      </Section>
+
+      {/* ------------------------------------------------------------ */}
+      <Section title="Terms of Use">
+        <P>
+          By creating an account or using Tadbirly (the app and {PUBLIC_URL}) you agree to these Terms, the
+          Community Rules and the Privacy Policy below. Tadbirly is run by {OPERATOR_NAME} ("we").
+        </P>
+        <H>Who can use Tadbirly</H>
+        <Li>You must be at least 13 years old. If you are under 18, you need permission from a parent or guardian to use Tadbirly.</Li>
+        <Li>Give accurate information about yourself and keep your password private. You are responsible for what happens in your account.</Li>
+        <Li>One person, one account. Don't pretend to be someone else or a school or organization you don't represent.</Li>
+        <H>Your content</H>
+        <Li>You own what you post (events, news, comments, messages, photos). You give us permission to store and show it to the people it is meant for, only to run the service.</Li>
+        <Li>Only post things you have the right to share. You are responsible for your content and for following local laws.</Li>
+        <H>Events</H>
+        <Li>Events are organized by users, not by Tadbirly. Organizers are responsible for their events, their accuracy and the safety of participants. Use common sense, meet in public places and tell a parent or guardian where you are going if you are under 18.</Li>
+        <H>Our rights</H>
+        <Li>We may remove any content and suspend or delete any account that breaks these Terms or the Community Rules, without notice, especially to protect other users.</Li>
+        <Li>Tadbirly is provided "as is". We work hard to keep it running and safe but cannot guarantee it is always available or error-free. To the extent allowed by law, we are not liable for events organized by users or for content posted by users.</Li>
+        <Li>We may update these Terms. If the change is important we will tell you in the app. Continuing to use Tadbirly means you accept the new version.</Li>
+      </Section>
+
+      {/* ------------------------------------------------------------ */}
+      <Section title="Community Rules">
+        <P>
+          Tadbirly has <Text style={s.b}>zero tolerance for objectionable content and abusive users.</Text> Many of
+          our users are school students. Do not post, send or share:
+        </P>
+        <Li>Harassment, bullying, threats, intimidation or hate based on who someone is.</Li>
+        <Li>Sexual content, nudity or sexual messages of any kind — and never anything sexual involving or directed at a minor.</Li>
+        <Li>Violence, self-harm encouragement, weapons, drugs or anything illegal.</Li>
+        <Li>Spam, scams, fake events, pyramid schemes or misleading offers.</Li>
+        <Li>Other people's personal information (phone, address, photos) without their consent.</Li>
+        <Li>Impersonation of people, schools or organizations.</Li>
+        <H>Report and block</H>
+        <P>
+          Every profile, event, news post, comment, team and chat has a ⚑ Report option. You can also block a
+          person: they can no longer message you or send you friend requests, and their content is hidden from you.
+          Reports are anonymous to the person reported.
+        </P>
+        <H>What we do</H>
+        <P>
+          We review every report within 24 hours. Content that breaks these rules is removed and the user who
+          posted it is warned, suspended or permanently removed. In an emergency, contact local authorities first.
+          To reach us directly: <Mail subject="Tadbirly report" />.
+        </P>
+      </Section>
+
+      {/* ------------------------------------------------------------ */}
+      <Section title="Privacy Policy">
+        <H>What we collect</H>
+        <Li><Text style={s.b}>Account:</Text> your name, email address and password (stored only in encrypted, hashed form), and when you accepted these Terms.</Li>
+        <Li><Text style={s.b}>Student Passport (optional):</Text> school or university, faculty, major, academic year, city, bio, skills, languages, honors, test scores (IELTS, SAT, ACT, Milliy Sertifikat), profile photo and cover photo.</Li>
+        <Li><Text style={s.b}>Contact details (optional):</Text> phone number, Telegram username, LinkedIn link.</Li>
+        <Li><Text style={s.b}>Activity:</Text> events you post or apply to, check-ins, medals and awards, reliability score, streaks, friends, teams, likes and notifications.</Li>
+        <Li><Text style={s.b}>Content:</Text> direct messages, event group-chat messages, news posts, comments and photos you upload.</Li>
+        <Li><Text style={s.b}>Safety:</Text> reports you file or that are filed about you, and the people you block.</Li>
+        <Li><Text style={s.b}>Push notifications (if you allow them):</Text> a device push token and subscription ID, device type, operating system, language and app version, processed by OneSignal and linked to your account ID.</Li>
+        <Li><Text style={s.b}>Telegram (only if you connect the Tadbirly bot):</Text> your Telegram chat ID and username, so we can send your notifications there.</Li>
+        <Li><Text style={s.b}>Technical logs:</Text> IP address, browser/app type and timestamps, kept briefly by our hosting providers for security and debugging.</Li>
+        <P>
+          We do <Text style={s.b}>not</Text> collect your precise location, your contacts or advertising identifiers,
+          we show no ads, we do not track you across other apps or websites, and we never sell your data.
+        </P>
+
+        <H>Why we use it</H>
+        <Li>To run your account and show your profile, events, applications, chats and teams (needed to provide the service).</Li>
+        <Li>To let organizers review applicants and award medals, and to compute rankings and reliability scores.</Li>
+        <Li>To send notifications you asked for (in-app, push, Telegram).</Li>
+        <Li>To keep users safe: handle reports, enforce blocks and the Community Rules, prevent abuse.</Li>
+        <Li>To give AI Career Coach suggestions, only when you use that feature.</Li>
+
+        <H>Who can see your information</H>
+        <Li>Your name, photo, Student Passport and pinned achievements are visible to other <Text style={s.b}>signed-in</Text> Tadbirly users. Nothing is visible to people who are not logged in.</Li>
+        <Li>Your phone, Telegram and LinkedIn are shown only to your accepted friends, to organizers of events you applied to, and (if you organize events) to people who applied to your events.</Li>
+        <Li>Direct messages are visible only to the two people in the chat; an event chat only to its organizer and accepted participants.</Li>
+        <Li>Organizers see the Passport and application of everyone who applies to their events.</Li>
+
+        <H>Service providers that process data for us</H>
+        <Li><A href="https://supabase.com/privacy">Supabase</A> — database, login, file storage and server functions (all account data).</Li>
+        <Li><A href="https://onesignal.com/privacy_policy">OneSignal</A> — push notifications (device data, account ID, notification text).</Li>
+        <Li><A href="https://telegram.org/privacy">Telegram</A> — notifications through the Tadbirly bot, only if you connect it.</Li>
+        <Li><A href="https://expo.dev/privacy">Expo</A> — hosting of the web app, app builds and app updates (technical logs).</Li>
+        <Li><A href="https://www.anthropic.com/legal/privacy">Anthropic</A> — the AI behind the AI Career Coach. Only the information needed for a suggestion (for example your applications and Passport fields) is sent, only when you use the coach. Under Anthropic's commercial terms it is not used to train their models.</Li>
+        <P>
+          These providers may store data on servers outside your country. They only process it on our
+          instructions. We share data with authorities only when the law requires it, or to protect someone's
+          safety.
+        </P>
+
+        <H>How long we keep it</H>
+        <Li>Your account data is kept while your account exists.</Li>
+        <Li>Messages, posts and comments are kept until you delete them or delete your account.</Li>
+        <Li>When you delete your account, your profile, photos, posts, applications, messages, comments, likes, friends, teams, notifications, reports and blocks are deleted immediately from the live system, and from backups within 30 days.</Li>
+        <Li>Technical logs kept by our providers are deleted automatically, usually within 90 days.</Li>
+
+        <H>Deleting your account</H>
+        <P>
+          In the app: Profile → Privacy &amp; account → <Text style={s.b}>Delete my account</Text>. On the web: log in
+          at <A href={`${PUBLIC_URL}/legal`}>{PUBLIC_URL}/legal</A> and use the same button. If you can't log in,
+          email <Mail subject="Delete my Tadbirly account" /> from the address you signed up with and we will delete
+          it within 30 days.
+        </P>
+
+        <H>Your rights</H>
+        <P>
+          You can see and correct your data in your Student Passport, turn off push notifications at any time in
+          your device settings, disconnect Telegram, and ask us for a copy of your data or to delete it by writing
+          to <Mail subject="My Tadbirly data" />. We answer within 30 days.
+        </P>
+
+        <H>Children and teenagers</H>
+        <P>
+          Tadbirly is for students aged 13 and over. We do not knowingly collect data from children under 13; if
+          you believe a child under 13 has an account, email <Mail subject="Under-13 account" /> and we will delete
+          it. Users under 18 need a parent's or guardian's permission. To protect younger users, contact details
+          are hidden from strangers, profiles are visible only to signed-in users, and anyone can be reported or
+          blocked. Parents and guardians may contact us to review or delete their child's data.
+        </P>
+
+        <H>Security</H>
+        <P>
+          Data is encrypted in transit (HTTPS), passwords are hashed, and database access rules ensure people can
+          only reach what they are allowed to see. No system is perfectly secure; if we learn of a breach that
+          affects you, we will tell you.
+        </P>
+
+        <H>Changes</H>
+        <P>
+          If we change this policy we will update the date above and, for important changes, tell you in the app.
+        </P>
+      </Section>
+
+      {/* ------------------------------------------------------------ */}
+      <Section title="Contact">
+        <P>
+          Questions, data requests or safety concerns: <Mail subject="Tadbirly" />{'\n'}
+          Operator: {OPERATOR_NAME}{'\n'}
+          This page online: <A href={`${PUBLIC_URL}/privacy`}>{PUBLIC_URL}/privacy</A>
+        </P>
+      </Section>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  h1: { fontSize: 22, fontWeight: '800', color: colors.ink, marginBottom: 12 },
+export default function Legal() {
+  const router = useRouter();
+  const { session } = useAuth();
+  const [busy, setBusy] = useState(false);
+
+  async function confirmDelete() {
+    const ok = await confirmAsync(
+      'Delete account?',
+      'This permanently removes your profile, photos, posts, applications and messages. This cannot be undone.',
+      'Delete'
+    );
+    if (!ok) return;
+    try {
+      setBusy(true);
+      await deleteAccount();
+      notify('Account deleted', 'Your account and its data have been deleted.');
+    } catch (e) {
+      setBusy(false);
+      notify('Could not delete', `${e?.message ?? 'Try again.'}\n\nIf this keeps happening, email ${SUPPORT_EMAIL}.`);
+    }
+  }
+
+  function back() {
+    if (router.canGoBack()) router.back();
+    else router.replace(session ? '/(tabs)' : '/(auth)/login');
+  }
+
+  return (
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={s.page}>
+      <Text style={s.h1}>Privacy, Terms & Community Rules</Text>
+
+      <LegalDocument />
+
+      {session ? (
+        <View style={s.danger}>
+          <Text style={s.dangerTitle}>Danger zone</Text>
+          <Text style={s.dangerText}>Deleting your account removes all of its data permanently.</Text>
+          <Button title="Delete my account" variant="danger" loading={busy} onPress={confirmDelete} />
+        </View>
+      ) : null}
+
+      <Button title={session ? 'Back' : 'Back to Tadbirly'} variant="ghost" style={{ marginTop: 12 }} onPress={back} />
+    </ScrollView>
+  );
+}
+
+const s = StyleSheet.create({
+  page: { padding: 18, paddingBottom: 40, width: '100%', maxWidth: 760, alignSelf: 'center' },
+  h1: { fontSize: 22, fontWeight: '800', color: colors.ink, marginBottom: 6 },
+  updated: { fontSize: 12, color: colors.muted, marginBottom: 12 },
   section: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 16, marginBottom: 12 },
-  sectionTitle: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, color: colors.muted, fontWeight: '700', marginBottom: 8 },
-  body: { fontSize: 13.5, lineHeight: 21, color: colors.ink },
-  note: { fontSize: 11.5, color: colors.muted, marginTop: 4, marginBottom: 16, lineHeight: 18 },
-  danger: { borderWidth: 1, borderColor: '#fbd5d5', backgroundColor: '#fdecec', borderRadius: radius.lg, padding: 16 },
-  dangerTitle: { fontSize: 13, fontWeight: '800', color: colors.danger, marginBottom: 10 },
-  delBtn: { backgroundColor: colors.danger },
+  sectionTitle: { fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, color: colors.brand, fontWeight: '800', marginBottom: 8 },
+  h3: { fontSize: 14, fontWeight: '800', color: colors.ink, marginTop: 12, marginBottom: 6 },
+  p: { fontSize: 13.5, lineHeight: 21, color: colors.ink, marginBottom: 6 },
+  b: { fontWeight: '800' },
+  li: { flexDirection: 'row', gap: 8, marginBottom: 5, paddingRight: 4 },
+  bullet: { fontSize: 13.5, lineHeight: 21, color: colors.muted },
+  liText: { flex: 1, fontSize: 13.5, lineHeight: 21, color: colors.ink },
+  link: { color: colors.brand, fontWeight: '700', textDecorationLine: 'underline' },
+  danger: { borderWidth: 1, borderColor: '#fbd5d5', backgroundColor: colors.dangerSoft, borderRadius: radius.lg, padding: 16, marginTop: 4 },
+  dangerTitle: { fontSize: 13, fontWeight: '800', color: colors.danger, marginBottom: 4 },
+  dangerText: { fontSize: 12.5, color: colors.ink, marginBottom: 10, lineHeight: 18 },
 });

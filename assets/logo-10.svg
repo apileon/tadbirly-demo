@@ -1,0 +1,92 @@
+<svg viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#14532d"/><stop offset="100%" stop-color="#a3e635"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#a3e635"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#c9f24d"/>
+    </linearGradient>
+    <linearGradient id="g4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff5a5f"/><stop offset="100%" stop-color="#ffb648"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1000" height="520" fill="#f4f6f1"/>
+  <text x="500" y="38" text-anchor="middle" font-size="18" font-weight="800" fill="#111511">Tadbirly — 10 marks</text>
+
+  <!-- 1 GRADIENT PAWN -->
+  <rect x="45" y="80" width="150" height="150" rx="40" fill="url(#g1)"/>
+  <circle cx="120" cy="132" r="17" fill="#fff"/>
+  <rect x="111" y="148" width="18" height="8" rx="4" fill="#fff"/>
+  <path d="M106 190 L112 158 L128 158 L134 190 Z" fill="#fff"/>
+  <rect x="100" y="188" width="40" height="11" rx="5.5" fill="#fff"/>
+  <text x="120" y="256" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">1 · Gradient Pawn</text>
+
+  <!-- 2 NEON T -->
+  <rect x="235" y="80" width="150" height="150" rx="40" fill="#111511"/>
+  <circle cx="310" cy="155" r="52" fill="#c9f24d" opacity="0.14"/>
+  <rect x="274" y="126" width="72" height="18" rx="9" fill="#c9f24d"/>
+  <rect x="301" y="126" width="18" height="62" rx="9" fill="#c9f24d"/>
+  <text x="310" y="256" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">2 · Neon T</text>
+
+  <!-- 3 SPARKLE -->
+  <rect x="425" y="80" width="150" height="150" rx="40" fill="url(#g2)"/>
+  <path d="M500 106 Q508 147 549 155 Q508 163 500 204 Q492 163 451 155 Q492 147 500 106 Z" fill="#fff"/>
+  <path d="M545 112 Q548 126 562 129 Q548 132 545 146 Q542 132 528 129 Q542 126 545 112 Z" fill="#fff" opacity="0.85"/>
+  <text x="500" y="256" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">3 · Sparkle</text>
+
+  <!-- 4 PAWN MASCOT -->
+  <rect x="615" y="80" width="150" height="150" rx="40" fill="#c9f24d"/>
+  <circle cx="690" cy="135" r="23" fill="#14532d"/>
+  <rect x="681" y="153" width="18" height="8" rx="4" fill="#14532d"/>
+  <path d="M676 192 L682 162 L698 162 L704 192 Z" fill="#14532d"/>
+  <rect x="670" y="190" width="40" height="11" rx="5.5" fill="#14532d"/>
+  <circle cx="683" cy="133" r="4.2" fill="#c9f24d"/>
+  <circle cx="697" cy="133" r="4.2" fill="#c9f24d"/>
+  <text x="690" y="256" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">4 · Pawn Mascot</text>
+
+  <!-- 5 BOLT -->
+  <rect x="805" y="80" width="150" height="150" rx="40" fill="url(#g1)"/>
+  <path d="M868 100 L908 100 L890 140 L912 140 L862 210 L876 156 L854 156 Z" fill="#fff"/>
+  <text x="880" y="256" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">5 · Bolt</text>
+
+  <!-- 6 ORBIT -->
+  <rect x="45" y="300" width="150" height="150" rx="40" fill="#111511"/>
+  <circle cx="120" cy="375" r="42" fill="none" stroke="#c9f24d" stroke-width="8"/>
+  <circle cx="120" cy="375" r="14" fill="#fff"/>
+  <circle cx="152" cy="343" r="11" fill="#c9f24d"/>
+  <text x="120" y="476" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">6 · Orbit</text>
+
+  <!-- 7 CLIMB -->
+  <rect x="235" y="300" width="150" height="150" rx="40" fill="url(#g3)"/>
+  <rect x="272" y="388" width="20" height="38" rx="8" fill="#fff" opacity="0.6"/>
+  <rect x="300" y="368" width="20" height="58" rx="8" fill="#fff" opacity="0.82"/>
+  <rect x="328" y="346" width="20" height="80" rx="8" fill="#fff"/>
+  <circle cx="338" cy="328" r="9" fill="#111511"/>
+  <text x="310" y="476" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">7 · The Climb</text>
+
+  <!-- 8 CHAT PAWN -->
+  <rect x="425" y="300" width="150" height="150" rx="40" fill="#c9f24d"/>
+  <rect x="455" y="332" width="90" height="66" rx="22" fill="#14532d"/>
+  <path d="M480 394 L480 420 L504 396 Z" fill="#14532d"/>
+  <circle cx="500" cy="354" r="9" fill="#fff"/>
+  <path d="M490 384 L494 368 L506 368 L510 384 Z" fill="#fff"/>
+  <text x="500" y="476" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">8 · Chat Pawn</text>
+
+  <!-- 9 DOUBLE T -->
+  <rect x="615" y="300" width="150" height="150" rx="40" fill="#fff" stroke="#e2e8dc" stroke-width="3"/>
+  <rect x="652" y="350" width="72" height="18" rx="9" fill="#c9f24d"/>
+  <rect x="679" y="350" width="18" height="62" rx="9" fill="#c9f24d"/>
+  <rect x="662" y="338" width="72" height="18" rx="9" fill="#14532d"/>
+  <rect x="689" y="338" width="18" height="62" rx="9" fill="#14532d"/>
+  <text x="690" y="476" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">9 · Double T</text>
+
+  <!-- 10 STAR BADGE -->
+  <rect x="805" y="300" width="150" height="150" rx="40" fill="url(#g4)"/>
+  <path d="M880 327 L889.4 352.1 L916.1 353.3 L895.2 369.9 L902.3 395.7 L880 381 L857.7 395.7 L864.8 369.9 L843.9 353.3 L870.6 352.1 Z" fill="#fff"/>
+  <rect x="866" y="400" width="28" height="9" rx="4.5" fill="#fff" opacity="0.85"/>
+  <text x="880" y="476" text-anchor="middle" font-size="12.5" font-weight="700" fill="#111511">10 · Star Badge</text>
+</svg>

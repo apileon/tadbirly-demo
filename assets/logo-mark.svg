@@ -1,0 +1,12 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tadbirly mark — offset double T. Black tile, lime behind, white in front. -->
+  <rect width="512" height="512" rx="138" fill="#111511"/>
+
+  <!-- lime T (behind) -->
+  <rect x="126" y="171" width="246" height="61" rx="31" fill="#c9f24d"/>
+  <rect x="219" y="171" width="61" height="212" rx="31" fill="#c9f24d"/>
+
+  <!-- white T (in front) -->
+  <rect x="160" y="130" width="246" height="61" rx="31" fill="#ffffff"/>
+  <rect x="253" y="130" width="61" height="212" rx="31" fill="#ffffff"/>
+</svg>

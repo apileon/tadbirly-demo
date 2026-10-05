@@ -1,161 +1,195 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { notify } from '../../lib/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, CATEGORIES } from '../../lib/theme';
+import { colors, radius, EVENT_TYPES, kindFor } from '../../lib/theme';
 import { Button } from '../../components/ui';
-
-const FREE_LIMIT = 3;
+import { pickAndUpload, canPickImage } from '../../lib/news';
+import { eventFormProblem, spotsValue, startTimeValue, TITLE_MAX, DESCRIPTION_MAX } from '../../lib/events';
 
 export default function Create() {
   const router = useRouter();
-  const { session, profile, refreshProfile } = useAuth();
-  const [mode, setMode] = useState('event'); // event | request
+  const { session } = useAuth();
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('');
+  const [type, setType] = useState('');      // one of EVENT_TYPES keys
+  const [custom, setCustom] = useState('');  // custom theme when type === 'Other'
   const [location, setLocation] = useState('');
   const [date, setDate] = useState('');
+  const [time, setTime] = useState('');      // optional start time, "HH:MM"
   const [spots, setSpots] = useState('');
   const [lookingFor, setLookingFor] = useState('');
   const [description, setDescription] = useState('');
+  const [teamMode, setTeamMode] = useState('solo'); // solo | team
+  const [teamMin, setTeamMin] = useState('2');
+  const [cover, setCover] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const isRequest = mode === 'request';
-  // Events count toward the free monthly cap; requests are always free & unlimited.
-  const overLimit = !isRequest && !profile?.is_pro && (profile?.posts_this_month ?? 0) >= FREE_LIMIT;
+  async function chooseCover() {
+    setUploading(true);
+    try { const url = await pickAndUpload('covers'); if (url) setCover(url); }
+    catch (e) { notify('Could not upload', e.message); }
+    setUploading(false);
+  }
 
   async function publish() {
-    if (!title.trim()) return Alert.alert('Add a title');
-    if (overLimit) return router.push('/pro');
+    // Title / date / time / spots / length checks are shared with Edit event,
+    // so both screens accept exactly the same things (incl. no 2026-02-31).
+    const problem = eventFormProblem({ title, date, time, spots, description });
+    if (problem) return notify(...problem);
+    if (!type) return notify('Pick a category', 'Choose what kind of event this is.');
+    const category = type === 'Other' ? (custom.trim() || 'Other') : type;
+    const minSize = teamMode === 'team' ? parseInt(teamMin, 10) : null;
+    if (teamMode === 'team' && (!minSize || minSize < 2)) {
+      return notify('Team size', 'A team event needs a minimum of at least 2 people.');
+    }
+
+    const startTime = startTimeValue(time);
+
     setSaving(true);
     const { data, error } = await supabase
       .from('posts')
       .insert({
         author_id: session.user.id,
-        kind: isRequest ? 'request' : (category?.toLowerCase().includes('intern') ? 'internship' : category?.toLowerCase().includes('mun') ? 'mun' : 'event'),
+        kind: kindFor(type),
         title: title.trim(),
-        category: category || null,
+        category,
         location: location || null,
-        event_date: date || null,
-        spots: spots ? parseInt(spots, 10) : null,
+        event_date: date.trim() || null,
+        // Left out when empty, so posting keeps working on a database that
+        // doesn't have the column yet (25_reminders.sql not run).
+        ...(startTime ? { start_time: startTime } : {}),
+        spots: spotsValue(spots),
         looking_for: lookingFor || null,
         description: description || null,
+        team_mode: teamMode,
+        team_min: minSize,
+        cover_url: cover,
       })
       .select()
       .single();
 
     if (error) {
       setSaving(false);
-      return Alert.alert('Could not publish', error.message);
-    }
-    // increment monthly counter only for events (not free requests)
-    if (!isRequest) {
-      await supabase
-        .from('profiles')
-        .update({ posts_this_month: (profile?.posts_this_month ?? 0) + 1 })
-        .eq('id', session.user.id);
-      await refreshProfile();
+      return notify('Could not publish', error.message);
     }
     setSaving(false);
     resetForm();
-    Alert.alert('Published ✅', 'Your post is live in the feed.');
+    notify('Published ✅', 'Your event is live in the feed.');
     router.push(`/post/${data.id}`);
   }
 
   function resetForm() {
-    setTitle(''); setCategory(''); setLocation(''); setDate(''); setSpots(''); setLookingFor(''); setDescription('');
+    setTitle(''); setType(''); setCustom(''); setLocation(''); setDate(''); setTime(''); setSpots('');
+    setLookingFor(''); setDescription(''); setTeamMode('solo'); setTeamMin('2'); setCover(null);
   }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
       <ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 60 }}>
-        <Text style={styles.h1}>Create a post</Text>
-        <Text style={styles.sub}>
-          Post an event as an organizer, or a request as a participant.
-        </Text>
+        <Text style={styles.h1}>Post an event</Text>
+        <Text style={styles.sub}>Publish an opportunity for students to apply to.</Text>
 
-        {!profile?.is_pro && (
-          <View style={styles.planPill}>
-            <Text style={styles.planText}>
-              Free plan · {Math.max(0, FREE_LIMIT - (profile?.posts_this_month ?? 0))} event posts left this month
-            </Text>
-            <TouchableOpacity onPress={() => router.push('/pro')}>
-              <Text style={styles.goPro}>Go Pro ⚡</Text>
+        <Text style={styles.label}>Cover photo</Text>
+        {cover ? (
+          <View>
+            <Image source={{ uri: cover }} style={styles.cover} resizeMode="contain" />
+            <TouchableOpacity onPress={() => setCover(null)}>
+              <Text style={styles.removeCover}>Remove cover</Text>
             </TouchableOpacity>
           </View>
-        )}
-
-        <View style={styles.seg}>
-          <SegBtn label="🎪 I'm organizing" on={!isRequest} onPress={() => setMode('event')} />
-          <SegBtn label="🙋 I'm requesting" on={isRequest} onPress={() => setMode('request')} />
-        </View>
+        ) : canPickImage ? (
+          <TouchableOpacity style={styles.coverPick} onPress={chooseCover} disabled={uploading}>
+            <Text style={styles.coverPickEmoji}>{uploading ? '⏳' : '🖼️'}</Text>
+            <Text style={styles.coverPickText}>{uploading ? 'Uploading…' : 'Add a cover photo'}</Text>
+            <Text style={styles.coverPickHint}>Events with a photo get far more applications</Text>
+          </TouchableOpacity>
+        ) : null}
 
         <Field label="Title">
-          <TextInput style={styles.input} value={title} onChangeText={setTitle}
-            placeholder={isRequest ? 'e.g. Looking for a UX mentor' : 'e.g. Inha Hackathon 2026'}
-            placeholderTextColor={colors.muted} />
+          <TextInput style={styles.input} value={title} onChangeText={setTitle} maxLength={TITLE_MAX}
+            placeholder="e.g. TashMUN 2026 — Delegates wanted" placeholderTextColor={colors.muted} />
         </Field>
 
-        {!isRequest && (
-          <Field label="Category">
-            <TextInput style={styles.input} value={category} onChangeText={setCategory}
-              placeholder="Hackathon / MUN / Internship / Workshop" placeholderTextColor={colors.muted} />
+        <Text style={styles.label}>Category</Text>
+        <View style={styles.chips}>
+          {EVENT_TYPES.map((t) => {
+            const on = type === t.key;
+            return (
+              <TouchableOpacity key={t.key} onPress={() => setType(t.key)} style={[styles.chip, on && styles.chipOn]}>
+                <Text style={[styles.chipText, on && { color: '#fff' }]}>{t.emoji} {t.key}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {type === 'Other' && (
+          <TextInput style={[styles.input, { marginTop: 8 }]} value={custom} onChangeText={setCustom}
+            placeholder="Write your own theme, e.g. Startup pitch night" placeholderTextColor={colors.muted} />
+        )}
+
+        <Text style={styles.label}>Who can apply?</Text>
+        <View style={styles.modeRow}>
+          <TouchableOpacity onPress={() => setTeamMode('solo')} style={[styles.mode, teamMode === 'solo' && styles.modeOn]}>
+            <Text style={[styles.modeTitle, teamMode === 'solo' && { color: '#fff' }]}>👤 Individuals</Text>
+            <Text style={[styles.modeSub, teamMode === 'solo' && { color: 'rgba(255,255,255,0.85)' }]}>Students apply one by one</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setTeamMode('team')} style={[styles.mode, teamMode === 'team' && styles.modeOn]}>
+            <Text style={[styles.modeTitle, teamMode === 'team' && { color: '#fff' }]}>🧩 Teams</Text>
+            <Text style={[styles.modeSub, teamMode === 'team' && { color: 'rgba(255,255,255,0.85)' }]}>A whole team applies together</Text>
+          </TouchableOpacity>
+        </View>
+        {teamMode === 'team' && (
+          <Field label="Minimum team size">
+            <TextInput style={styles.input} value={teamMin} onChangeText={setTeamMin}
+              keyboardType="number-pad" placeholder="2" placeholderTextColor={colors.muted} />
           </Field>
         )}
 
-        {!isRequest ? (
-          <>
-            <Field label="Date & place">
-              <TextInput style={styles.input} value={location} onChangeText={setLocation}
-                placeholder="Venue or address" placeholderTextColor={colors.muted} />
-            </Field>
+        <Field label="Location">
+          <TextInput style={styles.input} value={location} onChangeText={setLocation}
+            placeholder="e.g. WIUT, Tashkent" placeholderTextColor={colors.muted} />
+        </Field>
+        <View style={styles.pair}>
+          <View style={{ flex: 1 }}>
             <Field label="Date (YYYY-MM-DD)">
               <TextInput style={styles.input} value={date} onChangeText={setDate}
-                placeholder="2026-09-15" placeholderTextColor={colors.muted} />
+                placeholder="2026-09-20" placeholderTextColor={colors.muted} />
             </Field>
-            <Field label="Who are you looking for?">
-              <TextInput style={styles.input} value={lookingFor} onChangeText={setLookingFor}
-                placeholder="e.g. Backend devs, designers" placeholderTextColor={colors.muted} />
+          </View>
+          <View style={{ flex: 1 }}>
+            {/* Number pad: "18.30" / "18,30" are accepted, see parseStartTime */}
+            <Field label="Start time (HH:MM)">
+              <TextInput style={styles.input} value={time} onChangeText={setTime} maxLength={5}
+                keyboardType="decimal-pad" placeholder="18:30" placeholderTextColor={colors.muted} />
             </Field>
-            <Field label="Spots available">
-              <TextInput style={styles.input} value={spots} onChangeText={setSpots}
-                keyboardType="number-pad" placeholder="e.g. 20" placeholderTextColor={colors.muted} />
-            </Field>
-          </>
-        ) : (
-          <Field label="Deadline (YYYY-MM-DD)">
-            <TextInput style={styles.input} value={date} onChangeText={setDate}
-              placeholder="2026-09-15" placeholderTextColor={colors.muted} />
-          </Field>
-        )}
-
+          </View>
+        </View>
+        <Text style={styles.hint}>
+          Time is optional. Accepted students get a reminder the evening before — and 2 hours before the start, if you add a time.
+        </Text>
+        <Field label="Who are you looking for?">
+          <TextInput style={styles.input} value={lookingFor} onChangeText={setLookingFor}
+            placeholder="e.g. Delegates, designers, backend devs" placeholderTextColor={colors.muted} />
+        </Field>
+        <Field label="Spots available">
+          <TextInput style={styles.input} value={spots} onChangeText={setSpots}
+            keyboardType="number-pad" placeholder="e.g. 20" placeholderTextColor={colors.muted} />
+        </Field>
         <Field label="Details">
           <TextInput style={[styles.input, styles.textarea]} value={description} onChangeText={setDescription}
-            multiline placeholder="Describe it clearly…" placeholderTextColor={colors.muted} />
+            multiline maxLength={DESCRIPTION_MAX} placeholder="Describe it clearly — format, requirements, what participants get…" placeholderTextColor={colors.muted} />
         </Field>
 
-        <Button
-          title={overLimit ? 'Upgrade to keep posting ⚡' : (isRequest ? 'Post request' : 'Publish event')}
-          variant={overLimit ? 'dark' : 'primary'}
-          onPress={publish}
-          loading={saving}
-          style={{ marginTop: 18 }}
-        />
-        <Text style={styles.note}>Posts are reviewed to keep the feed official and spam-free ✔</Text>
+        <Button title="Publish event" variant="primary" onPress={publish} loading={saving} style={{ marginTop: 18 }} />
+        <Text style={styles.note}>Add your Telegram / phone in your Passport so applicants can reach you.</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function SegBtn({ label, on, onPress }) {
-  return (
-    <TouchableOpacity onPress={onPress} style={[styles.segBtn, on && styles.segBtnOn]}>
-      <Text style={[styles.segText, on && { color: colors.ink }]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
 function Field({ label, children }) {
   return (
     <View>
@@ -168,15 +202,25 @@ function Field({ label, children }) {
 const styles = StyleSheet.create({
   h1: { fontSize: 22, fontWeight: '800', color: colors.ink },
   sub: { fontSize: 13.5, color: colors.muted, marginTop: 4, lineHeight: 20 },
-  planPill: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.brandSoft, borderRadius: radius.md, padding: 12, marginTop: 14 },
-  planText: { fontSize: 12.5, color: colors.brand, fontWeight: '600', flex: 1 },
-  goPro: { fontSize: 13, color: colors.brand, fontWeight: '800' },
-  seg: { flexDirection: 'row', backgroundColor: colors.bg, borderRadius: radius.md, padding: 4, marginTop: 16, borderWidth: 1, borderColor: colors.line },
-  segBtn: { flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center' },
-  segBtnOn: { backgroundColor: colors.card, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, elevation: 2 },
-  segText: { fontSize: 13, fontWeight: '700', color: colors.muted },
   label: { fontSize: 12.5, fontWeight: '700', color: colors.muted, marginTop: 16, marginBottom: 6 },
   input: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 12, fontSize: 14, color: colors.ink },
   textarea: { height: 96, textAlignVertical: 'top' },
-  note: { fontSize: 11, color: colors.muted, textAlign: 'center', marginTop: 12 },
+  pair: { flexDirection: 'row', gap: 10 },
+  hint: { fontSize: 11.5, color: colors.muted, marginTop: 6, lineHeight: 16 },
+  cover: { width: '100%', height: 300, borderRadius: radius.md, backgroundColor: '#1a1f19' },
+  removeCover: { color: colors.danger, fontWeight: '700', fontSize: 13, textAlign: 'center', marginTop: 10 },
+  coverPick: { backgroundColor: colors.card, borderWidth: 2, borderStyle: 'dashed', borderColor: colors.line, borderRadius: radius.md, paddingVertical: 26, alignItems: 'center' },
+  coverPickEmoji: { fontSize: 30 },
+  coverPickText: { fontSize: 14.5, fontWeight: '800', color: colors.ink, marginTop: 8 },
+  coverPickHint: { fontSize: 11.5, color: colors.muted, marginTop: 4 },
+  modeRow: { flexDirection: 'row', gap: 10 },
+  mode: { flex: 1, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 12 },
+  modeOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  modeTitle: { fontSize: 14, fontWeight: '800', color: colors.ink },
+  modeSub: { fontSize: 11.5, color: colors.muted, marginTop: 3, lineHeight: 16 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingVertical: 8, paddingHorizontal: 13, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  chipOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  chipText: { fontSize: 12.5, color: colors.ink, fontWeight: '600' },
+  note: { fontSize: 11.5, color: colors.muted, textAlign: 'center', marginTop: 12, lineHeight: 17 },
 });
