@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator,
+  View, Text, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { Button } from '../components/ui';
-import { colors, radius } from '../lib/theme';
+import { Button, Logo, TextField } from '../components/ui';
+import { colors, radius, type, shadow } from '../lib/theme';
+import { t } from '../lib/i18n';
 
 // ---------------------------------------------------------------------------
 //  Where the "reset your password" email lands (see app/(auth)/reset.js).
@@ -30,10 +31,10 @@ function readLinkParams(routeParams) {
   });
   // On web, the address bar is the untouched original — prefer it.
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    new URLSearchParams(window.location.search).forEach((v, k) => { out[k] = v; });
+    new globalThis.URLSearchParams(window.location.search).forEach((v, k) => { out[k] = v; });
     if (window.location.hash.length > 1) fragment = window.location.hash.slice(1);
   }
-  new URLSearchParams(fragment).forEach((v, k) => { out[k] = v; });
+  new globalThis.URLSearchParams(fragment).forEach((v, k) => { out[k] = v; });
   return out;
 }
 
@@ -94,7 +95,7 @@ export default function ResetPassword() {
         // Nothing in the link at all — e.g. this page was reloaded after the
         // link was used. Fine if someone is signed in (checked below).
       } catch (e) {
-        error = { message: e?.message || 'Could not check this link.' };
+        error = { message: e?.message || t('Could not check this link.') };
       }
       scrubUrl();
 
@@ -117,14 +118,14 @@ export default function ResetPassword() {
   // Show the confirmation for a moment, then carry on into the app.
   useEffect(() => {
     if (stage !== 'done') return undefined;
-    const t = setTimeout(() => router.replace('/'), 1500);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => router.replace('/'), 1500);
+    return () => clearTimeout(timer);
   }, [stage, router]);
 
   async function save() {
     setErr('');
-    if (password.length < MIN_LENGTH) { setErr(`Use at least ${MIN_LENGTH} characters.`); return; }
-    if (password !== confirm) { setErr("The two passwords don't match."); return; }
+    if (password.length < MIN_LENGTH) { setErr(t('Use at least {n} characters.', { n: MIN_LENGTH })); return; }
+    if (password !== confirm) { setErr(t("The two passwords don't match.")); return; }
     setSaving(true);
     const { error } = await supabase.auth.updateUser({ password });
     if (!mounted.current) return;
@@ -148,107 +149,137 @@ export default function ResetPassword() {
     return (
       <View style={[styles.wrap, styles.center]}>
         <ActivityIndicator color={colors.brand} size="large" />
-        <Text style={[styles.body, { marginTop: 14, textAlign: 'center' }]}>Checking your reset link…</Text>
+        <Text style={[styles.body, { marginTop: 14, textAlign: 'center' }]}>{t('Checking your reset link…')}</Text>
       </View>
     );
   }
 
   if (stage === 'invalid') {
     return (
-      <View style={styles.wrap}>
-        <Text style={styles.h1}>This link is invalid or expired</Text>
+      <Shell>
+        <View style={[styles.badge, { backgroundColor: colors.warnSoft }]}>
+          <Ionicons name="time-outline" size={26} color={colors.warn} />
+        </View>
+        <Text style={styles.h1}>{t('This link is invalid or expired')}</Text>
         <Text style={styles.body}>
-          Reset links only work once, and only for a short while.{' '}
           {signedIn
-            ? "You're still logged in on this device, so nothing is lost."
-            : 'Ask for a new one, then open the newest email you get.'}
+            ? t("Reset links only work once, and only for a short while. You're still logged in on this device, so nothing is lost.")
+            : t('Reset links only work once, and only for a short while. Ask for a new one, then open the newest email you get.')}
         </Text>
         {detail ? <Text style={styles.detail}>{detail}</Text> : null}
         {signedIn ? (
-          <Button title="Go to Tadbirly" onPress={() => router.replace('/')} style={{ marginTop: 20 }} />
+          <Button title={t('Go to Tadbirly')} onPress={() => router.replace('/')} style={{ marginTop: 20 }} />
         ) : (
-          <Button title="Send me a new link" onPress={() => router.replace('/(auth)/reset')} style={{ marginTop: 20 }} />
+          <Button title={t('Send me a new link')} icon="mail-outline" onPress={() => router.replace('/(auth)/reset')} style={{ marginTop: 20 }} />
         )}
-      </View>
+      </Shell>
     );
   }
 
   if (stage === 'done') {
     return (
-      <View style={styles.wrap}>
-        <Text style={styles.h1}>Password updated ✅</Text>
-        <Text style={styles.body}>You're logged in with your new password. Taking you to Tadbirly…</Text>
-        <Button title="Continue" onPress={() => router.replace('/')} style={{ marginTop: 20 }} />
-      </View>
+      <Shell>
+        <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}>
+          <Ionicons name="checkmark-circle" size={28} color={colors.accent} />
+        </View>
+        <Text style={styles.h1}>{t('Password updated')}</Text>
+        <Text style={styles.body}>{t("You're logged in with your new password. Taking you to Tadbirly…")}</Text>
+        <Button title={t('Continue')} onPress={() => router.replace('/')} style={{ marginTop: 20 }} />
+      </Shell>
     );
   }
 
   return (
-    <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Text style={styles.h1}>Choose a new password</Text>
+    <Shell>
+      <Text style={styles.h1}>{t('Choose a new password')}</Text>
       <Text style={styles.body}>
-        {email ? `For ${email}. ` : ''}At least {MIN_LENGTH} characters.
+        {email
+          ? t('For {email}. At least {n} characters.', { email, n: MIN_LENGTH })
+          : t('At least {n} characters.', { n: MIN_LENGTH })}
       </Text>
 
-      <Text style={styles.label}>New password</Text>
-      <View style={styles.pwWrap}>
-        <TextInput
-          style={styles.pwInput}
-          secureTextEntry={!showPw}
-          autoCapitalize="none"
-          autoComplete="new-password"
-          textContentType="newPassword"
-          placeholder="••••••••"
-          placeholderTextColor={colors.muted}
-          value={password}
-          onChangeText={setPassword}
-        />
-        <TouchableOpacity
-          onPress={() => setShowPw((v) => !v)}
-          style={styles.eye}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={21} color={colors.muted} />
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.label}>Repeat new password</Text>
-      <TextInput
-        style={styles.input}
+      <TextField
+        label={t('New password')}
+        icon="lock-closed-outline"
         secureTextEntry={!showPw}
         autoCapitalize="none"
         autoComplete="new-password"
         textContentType="newPassword"
         placeholder="••••••••"
-        placeholderTextColor={colors.muted}
+        value={password}
+        onChangeText={setPassword}
+        style={{ marginTop: 18 }}
+      />
+
+      <TextField
+        label={t('Repeat new password')}
+        icon="lock-closed-outline"
+        secureTextEntry={!showPw}
+        autoCapitalize="none"
+        autoComplete="new-password"
+        textContentType="newPassword"
+        placeholder="••••••••"
         value={confirm}
         onChangeText={setConfirm}
         onSubmitEditing={save}
       />
 
-      {err ? <Text style={styles.err}>{err}</Text> : null}
+      {/* One toggle shows or hides both fields. */}
+      <TouchableOpacity
+        onPress={() => setShowPw((v) => !v)}
+        style={styles.showRow}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel={showPw ? t('Hide password') : t('Show password')}
+      >
+        <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.muted} />
+        <Text style={styles.showText}>{showPw ? t('Hide password') : t('Show password')}</Text>
+      </TouchableOpacity>
 
-      <Button title="Save new password" onPress={save} loading={saving} style={{ marginTop: 18 }} />
+      {err ? (
+        <View style={styles.err}>
+          <Ionicons name="alert-circle" size={16} color={colors.danger} />
+          <Text style={styles.errText}>{err}</Text>
+        </View>
+      ) : null}
+
+      <Button title={t('Save new password')} onPress={save} loading={saving} style={{ marginTop: 18 }} />
+    </Shell>
+  );
+}
+
+// Centred column with the logo above a card, like the log-in screen.
+function Shell({ children }) {
+  return (
+    <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <View style={styles.column}>
+          <Logo size={52} style={{ alignSelf: 'center', marginBottom: 22 }} />
+          <View style={styles.panel}>{children}</View>
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: colors.bg, padding: 24, justifyContent: 'center' },
-  center: { alignItems: 'center' },
-  h1: { fontSize: 24, fontWeight: '800', color: colors.ink, marginBottom: 10 },
-  body: { fontSize: 14, color: colors.muted, lineHeight: 21 },
+  wrap: { flex: 1, backgroundColor: colors.bg },
+  center: { alignItems: 'center', justifyContent: 'center', padding: 24 },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20, paddingVertical: 40 },
+  column: { width: '100%', maxWidth: 420, alignSelf: 'center' },
+  panel: {
+    backgroundColor: colors.card, borderRadius: radius.xl, padding: 22,
+    borderWidth: 1, borderColor: colors.line, ...shadow.md,
+  },
+  badge: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  h1: { ...type.h2, marginBottom: 8 },
+  body: { ...type.small, fontSize: 14, lineHeight: 21 },
   detail: { fontSize: 12.5, color: colors.muted, marginTop: 10, fontStyle: 'italic' },
-  label: { fontSize: 12.5, fontWeight: '700', color: colors.muted, marginTop: 16, marginBottom: 6 },
-  input: {
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line,
-    borderRadius: radius.md, padding: 13, fontSize: 15, color: colors.ink,
+  showRow: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 12 },
+  showText: { fontSize: 13, color: colors.muted, fontWeight: '600' },
+  err: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14,
+    backgroundColor: colors.dangerSoft, borderRadius: radius.sm, paddingVertical: 10, paddingHorizontal: 12,
   },
-  pwWrap: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
-  },
-  pwInput: { flex: 1, padding: 13, fontSize: 15, color: colors.ink },
-  eye: { paddingHorizontal: 14, paddingVertical: 12 },
-  err: { color: colors.danger, fontSize: 13.5, marginTop: 14, textAlign: 'center' },
+  errText: { color: colors.danger, fontSize: 13.5, flex: 1 },
 });

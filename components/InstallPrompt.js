@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { colors, radius } from '../lib/theme';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, radius, type, shadow } from '../lib/theme';
 import {
   isInstalled, isIOS, notificationState, notificationHelp, unlockAudio, ping,
   inAppBrowser, inAppGuidance, openInSystemBrowser, copyLink,
@@ -8,6 +9,7 @@ import {
 import { promptPush } from '../lib/push';
 import { notify } from '../lib/notify';
 import { useAuth } from '../lib/auth';
+import { t } from '../lib/i18n';
 
 const DISMISS_KEY = 'tdb:install-dismissed';
 const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
@@ -61,7 +63,7 @@ function WebInstallPrompt() {
     window.addEventListener('appinstalled', onInstalled);
 
     // Decide what to show after a moment, so it doesn't fight the first paint.
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       const perm = notificationState();
       if (perm === 'granted' || dismissed) return;         // nothing to nag about
 
@@ -78,7 +80,7 @@ function WebInstallPrompt() {
     }, 2500);
 
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       window.removeEventListener('beforeinstallprompt', onBefore);
       window.removeEventListener('appinstalled', onInstalled);
     };
@@ -127,52 +129,57 @@ function WebInstallPrompt() {
 
   async function copy() {
     const ok = await copyLink(); // starts synchronously, inside the tap
-    if (!ok) { notify('Copy this link', window.location.href); return; }
+    if (!ok) { notify(t('Copy this link'), window.location.href); return; }
     setCopied(true);
     clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 4000);
   }
 
   if (!mode) return null;
+  // Signed out (login / sign-up), the only nudge that matters is "open in your
+  // browser". Install and notification banners wait until they're in the app,
+  // instead of covering the login form on someone's first visit.
+  if (!uid && mode !== 'inapp') return null;
 
   const inApp = mode === 'inapp' ? inAppGuidance() : null;
 
   const content = {
     inapp: inApp && {
-      emoji: '🌐',
+      icon: 'globe-outline',
       title: inApp.title,
-      body: copied ? `Link copied — open ${inApp.browser} and paste it into the address bar.` : inApp.body,
-      cta: 'Open',
+      body: copied ? t('Link copied. Open {browser} and paste it into the address bar.', { browser: inApp.browser }) : inApp.body,
+      cta: t('Open'),
       action: openBrowser,
-      secondary: copied ? 'Copied ✓' : 'Copy link',
+      secondary: copied ? t('Copied') : t('Copy link'),
+      secondaryIcon: copied ? 'checkmark' : 'copy-outline',
       secondaryAction: copy,
     },
     install: {
-      emoji: '📲',
-      title: 'Add Tadbirly to your Home Screen',
-      body: 'Save it once and open it with one tap — no typing the link every time.',
-      cta: 'Add',
+      icon: 'phone-portrait-outline',
+      title: t('Add Tadbirly to your Home Screen'),
+      body: t('Save it once and open it with one tap, no typing the link every time.'),
+      cta: t('Add'),
       action: install,
     },
     ios: {
-      emoji: '📲',
-      title: 'Add Tadbirly to your Home Screen',
-      body: 'Tap the Share button at the bottom of Safari, then choose “Add to Home Screen”. Notifications only work from there.',
-      cta: 'Got it',
+      icon: 'phone-portrait-outline',
+      title: t('Add Tadbirly to your Home Screen'),
+      body: t('Tap the Share button at the bottom of Safari, then choose “Add to Home Screen”. Notifications only work from there.'),
+      cta: t('Got it'),
       action: dismiss,
     },
     notify: {
-      emoji: '🔔',
-      title: 'Turn on notifications',
-      body: 'Get told when you’re accepted to an event, invited to a team or given points.',
-      cta: 'Allow',
+      icon: 'notifications-outline',
+      title: t('Turn on notifications'),
+      body: t('Get told when you’re accepted to an event, invited to a team or given points.'),
+      cta: t('Allow'),
       action: enableNotifications,
     },
     blocked: {
-      emoji: '🔕',
-      title: 'Notifications are blocked',
+      icon: 'notifications-off-outline',
+      title: t('Notifications are blocked'),
       body: notificationHelp('denied')?.body,
-      cta: 'Got it',
+      cta: t('Got it'),
       action: dismiss,
     },
   }[mode];
@@ -182,22 +189,25 @@ function WebInstallPrompt() {
   return (
     <View style={styles.wrap} pointerEvents="box-none">
       <View style={styles.card}>
-        <Text style={styles.emoji}>{content.emoji}</Text>
+        <View style={styles.iconWrap}>
+          <Ionicons name={content.icon} size={22} color={colors.brand} />
+        </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{content.title}</Text>
           <Text style={styles.body}>{content.body}</Text>
         </View>
         <View style={{ gap: 6 }}>
-          <TouchableOpacity style={styles.cta} onPress={content.action} disabled={busy}>
-            <Text style={styles.ctaText}>{busy ? '…' : content.cta}</Text>
+          <TouchableOpacity style={styles.cta} onPress={content.action} disabled={busy} accessibilityRole="button">
+            {busy ? <ActivityIndicator size="small" color={colors.onBrand} /> : <Text style={styles.ctaText}>{content.cta}</Text>}
           </TouchableOpacity>
           {content.secondary ? (
-            <TouchableOpacity style={styles.ctaGhost} onPress={content.secondaryAction}>
+            <TouchableOpacity style={styles.ctaGhost} onPress={content.secondaryAction} accessibilityRole="button">
+              <Ionicons name={content.secondaryIcon} size={13} color={colors.ink} />
               <Text style={styles.ctaGhostText}>{content.secondary}</Text>
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity onPress={later}>
-            <Text style={styles.later}>Later</Text>
+          <TouchableOpacity onPress={later} accessibilityRole="button">
+            <Text style={styles.later}>{t('Later')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -209,16 +219,19 @@ const styles = StyleSheet.create({
   wrap: { position: 'absolute', left: 0, right: 0, bottom: 74, paddingHorizontal: 12, zIndex: 900 },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: colors.ink, borderRadius: radius.lg, paddingVertical: 14, paddingHorizontal: 15,
-    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 10,
+    backgroundColor: colors.card, borderRadius: radius.lg, paddingVertical: 14, paddingHorizontal: 15,
+    borderWidth: 1, borderColor: colors.line, ...shadow.lg,
     maxWidth: 560, width: '100%', alignSelf: 'center',
   },
-  emoji: { fontSize: 26 },
-  title: { color: '#fff', fontWeight: '800', fontSize: 14.5 },
-  body: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 3, lineHeight: 17 },
-  cta: { backgroundColor: colors.brandSoft, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 16, alignItems: 'center' },
-  ctaText: { color: colors.brand, fontWeight: '800', fontSize: 13 },
-  ctaGhost: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12, alignItems: 'center' },
-  ctaGhostText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-  later: { color: 'rgba(255,255,255,0.55)', fontSize: 11.5, textAlign: 'center', fontWeight: '600' },
+  iconWrap: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
+  title: { ...type.title, fontSize: 14.5 },
+  body: { fontSize: 12, color: colors.muted, marginTop: 3, lineHeight: 17 },
+  cta: { backgroundColor: colors.brand, borderRadius: radius.pill, paddingVertical: 8, paddingHorizontal: 16, alignItems: 'center', minWidth: 64 },
+  ctaText: { color: colors.onBrand, fontWeight: '700', fontSize: 13 },
+  ctaGhost: {
+    flexDirection: 'row', gap: 4, justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radius.pill, paddingVertical: 6, paddingHorizontal: 12, alignItems: 'center',
+  },
+  ctaGhostText: { color: colors.ink, fontWeight: '700', fontSize: 12 },
+  later: { color: colors.muted, fontSize: 11.5, textAlign: 'center', fontWeight: '600' },
 });

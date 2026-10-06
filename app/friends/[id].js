@@ -1,10 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { colors, radius } from '../../lib/theme';
-import { Avatar } from '../../components/ui';
+import { Avatar, EmptyState, SectionHeader } from '../../components/ui';
+import { t } from '../../lib/i18n';
 import { SkeletonList } from '../../components/Skeleton';
 
 export default function FriendsList() {
@@ -25,7 +27,7 @@ export default function FriendsList() {
       supabase.rpc('friends_of', { target: id }),
       isMe ? Promise.resolve({ data: [] }) : supabase.rpc('mutual_friends', { target: id }),
     ]);
-    setWho(profileRes.data?.full_name ?? 'This student');
+    setWho(profileRes.data?.full_name ?? t('This student'));
     setRows(friendsRes.data ?? []);
     setMutualIds(new Set((mutualRes.data ?? []).map((m) => m.id)));
     setLoading(false);
@@ -40,32 +42,36 @@ export default function FriendsList() {
       <FlatList
         data={rows}
         keyExtractor={(p) => p.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+        contentContainerStyle={styles.list}
         ListHeaderComponent={
-          <Text style={styles.header}>
-            {isMe ? 'Your friends' : `${who}'s friends`} · {rows.length}
-          </Text>
+          <SectionHeader
+            title={`${isMe ? t('Your friends') : t("{name}'s friends", { name: who })} · ${rows.length}`}
+            style={{ marginTop: 0 }}
+          />
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            {isMe
-              ? "You haven't added anyone yet. Use Social → Find people to add friends."
-              : `${who} hasn't added anyone yet.`}
-          </Text>
+          <EmptyState
+            icon="people-outline"
+            title={isMe ? t("You haven't added anyone yet") : t("{name} hasn't added anyone yet", { name: who })}
+            text={isMe ? t('Use Social, then Find people, to add friends.') : undefined}
+          />
         }
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.row} onPress={() => router.push(`/user/${item.id}`)}>
             <Avatar uri={item.avatar_url} name={item.full_name} id={item.id} size={44} />
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>
-                {item.full_name}{item.id === uid ? ' · you' : ''}
+                {item.full_name}{item.id === uid ? ` · ${t('you')}` : ''}
               </Text>
-              <Text style={styles.meta}>
-                {item.university ? `${item.university} · ` : ''}⭐ {item.reliability ?? 75}%
-                {mutualIds.has(item.id) ? ' · mutual' : ''}
-              </Text>
+              <View style={styles.metaRow}>
+                {item.university ? <Text style={styles.meta} numberOfLines={1}>{item.university} ·</Text> : null}
+                <Ionicons name="shield-checkmark-outline" size={12} color={colors.muted} />
+                <Text style={styles.meta}>
+                  {item.reliability ?? 75}%{mutualIds.has(item.id) ? ` · ${t('mutual')}` : ''}
+                </Text>
+              </View>
             </View>
-            <Text style={styles.go}>View →</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.faint} />
           </TouchableOpacity>
         )}
       />
@@ -74,10 +80,9 @@ export default function FriendsList() {
 }
 
 const styles = StyleSheet.create({
-  header: { fontSize: 13, fontWeight: '800', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 13, marginBottom: 10 },
+  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 13, marginBottom: 10 },
   name: { fontSize: 15, fontWeight: '700', color: colors.ink },
-  meta: { fontSize: 12.5, color: colors.muted, marginTop: 2 },
-  go: { fontSize: 12.5, color: colors.brand, fontWeight: '700' },
-  empty: { textAlign: 'center', color: colors.muted, marginTop: 40, lineHeight: 21, paddingHorizontal: 20 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  meta: { fontSize: 12.5, color: colors.muted, flexShrink: 1 },
 });

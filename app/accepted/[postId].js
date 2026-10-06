@@ -1,10 +1,12 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors } from '../../lib/theme';
-import { Card, Button } from '../../components/ui';
+import { colors, radius, type, shadow } from '../../lib/theme';
+import { Button, Avatar, EmptyState } from '../../components/ui';
+import { t } from '../../lib/i18n';
 
 // Organizer-only, like Applicants / Medals / End event. Participants never
 // get a link here (they see "Going: …" on the event page, which uses the
@@ -35,53 +37,77 @@ export default function AcceptedParticipants() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   if (post === undefined) return <ActivityIndicator style={{ marginTop: 60 }} color={colors.brand} />;
-  if (!post) return <Text style={styles.empty}>Event not found.</Text>;
+  if (!post) return <EmptyState icon="alert-circle-outline" title={t('Event not found.')} />;
   if (post.author_id !== uid) {
     return (
-      <View style={{ padding: 24, alignItems: 'center' }}>
-        <Text style={styles.empty}>Only the organizer of this event can open this page. You can see who's going on the event page.</Text>
-        <Button title="Open the event" variant="ghost" style={{ marginTop: 14 }} onPress={() => router.replace(`/post/${postId}`)} />
+      <View style={styles.gate}>
+        <EmptyState
+          icon="lock-closed-outline"
+          title={t('Organizers only')}
+          text={t("Only the organizer of this event can open this page. You can see who's going on the event page.")}
+          style={{ paddingBottom: 8 }}
+        />
+        <Button title={t('Open the event')} variant="ghost" style={{ marginTop: 8 }} onPress={() => router.replace(`/post/${postId}`)} />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View style={styles.head}>
-        <Text style={styles.title}>👥 Accepted participants</Text>
-        <Text style={styles.sub}>{post.title ?? 'Event'} · {rows.length} confirmed</Text>
-      </View>
-      <FlatList
-        data={rows}
-        keyExtractor={(u) => u.id}
-        contentContainerStyle={{ padding: 16 }}
-        ListEmptyComponent={<Text style={styles.empty}>No accepted participants yet. Accept people from the Applicants screen.</Text>}
-        renderItem={({ item }) => (
-          <Card onPress={() => router.push(`/user/${item.id}`)}>
-            <View style={styles.row}>
-              <View style={styles.avatar}><Text style={styles.avatarText}>{(item.full_name ?? '?')[0]}</Text></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.full_name}{item.verified_student ? ' ✔' : ''}</Text>
-                <Text style={styles.meta}>{item.university ?? ''}{item.major ? ` · ${item.major}` : ''} · ⭐ {item.reliability ?? 75}%</Text>
-              </View>
-              <Text style={styles.view}>Profile →</Text>
+    <FlatList
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      data={rows}
+      keyExtractor={(u) => u.id}
+      contentContainerStyle={styles.list}
+      ListHeaderComponent={
+        <View style={styles.head}>
+          <Text style={styles.title}>{t('Accepted participants')}</Text>
+          <Text style={styles.sub}>
+            {post.title ?? t('Event')} · {rows.length === 1 ? t('1 confirmed') : t('{n} confirmed', { n: rows.length })}
+          </Text>
+        </View>
+      }
+      ListEmptyComponent={
+        <EmptyState
+          icon="people-outline"
+          title={t('No accepted participants yet')}
+          text={t('Accept people from the Applicants screen.')}
+        />
+      }
+      renderItem={({ item }) => (
+        <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={() => router.push(`/user/${item.id}`)}>
+          <Avatar name={item.full_name} id={item.id} size={44} />
+          <View style={{ flex: 1 }}>
+            <View style={styles.nameRow}>
+              <Text style={styles.name} numberOfLines={1}>{item.full_name}</Text>
+              {item.verified_student ? (
+                <Ionicons name="checkmark-circle" size={15} color={colors.brand} accessibilityLabel={t('Verified student')} />
+              ) : null}
             </View>
-          </Card>
-        )}
-      />
-    </View>
+            {item.university || item.major ? (
+              <Text style={styles.meta} numberOfLines={1}>{item.university ?? ''}{item.major ? `${item.university ? ' · ' : ''}${item.major}` : ''}</Text>
+            ) : null}
+            <View style={styles.relRow}>
+              <Ionicons name="shield-checkmark-outline" size={13} color={colors.brand} />
+              <Text style={styles.rel}>{t('{n}% reliable', { n: item.reliability ?? 75 })}</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.faint} accessibilityLabel={t('Profile')} />
+        </TouchableOpacity>
+      )}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  head: { backgroundColor: colors.card, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
-  title: { fontSize: 18, fontWeight: '800', color: colors.ink },
-  sub: { fontSize: 13, color: colors.muted, marginTop: 2 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.brand, fontWeight: '800', fontSize: 18 },
-  name: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  gate: { padding: 24, alignItems: 'center', width: '100%', maxWidth: 520, alignSelf: 'center' },
+  head: { marginBottom: 14 },
+  title: { ...type.h2 },
+  sub: { ...type.small, marginTop: 2 },
+  card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 14, marginBottom: 10, ...shadow.sm },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  name: { ...type.title, fontSize: 15, flexShrink: 1 },
   meta: { fontSize: 12.5, color: colors.muted, marginTop: 2 },
-  view: { fontSize: 13, color: colors.brand, fontWeight: '700' },
-  empty: { textAlign: 'center', color: colors.muted, marginTop: 40, paddingHorizontal: 20, lineHeight: 21 },
+  relRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  rel: { fontSize: 12, color: colors.body, fontWeight: '600' },
 });

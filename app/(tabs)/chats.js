@@ -1,18 +1,20 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCachedQuery, writeCache } from '../../lib/cache';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius } from '../../lib/theme';
-import { Button, Card, Avatar } from '../../components/ui';
+import { colors, radius, type } from '../../lib/theme';
+import { Button, Card, Avatar, EmptyState } from '../../components/ui';
 import { confirmAsync, notify } from '../../lib/notify';
 import { timeAgo } from '../../lib/news';
 import { sharedStreak } from '../../lib/social';
 import { SkeletonList } from '../../components/Skeleton';
 import { useBadges, unreadByChat } from '../../lib/badges';
 import Dot from '../../components/Dot';
+import { t } from '../../lib/i18n';
 
 export default function Social() {
   const [tab, setTab] = useState('chats');
@@ -20,10 +22,10 @@ export default function Social() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
       <View style={styles.head}>
-        <Text style={styles.h1}>Social</Text>
+        <Text style={styles.heading}>{t('Social')}</Text>
         <View style={styles.seg}>
-          <SegBtn label="💬 Chats" on={tab === 'chats'} onPress={() => setTab('chats')} n={badges.messages} />
-          <SegBtn label="📰 News" on={tab === 'news'} onPress={() => setTab('news')} />
+          <SegBtn label={t('Chats')} icon="chatbubbles-outline" on={tab === 'chats'} onPress={() => setTab('chats')} n={badges.messages} />
+          <SegBtn label={t('News')} icon="newspaper-outline" on={tab === 'news'} onPress={() => setTab('news')} />
         </View>
       </View>
       {/* Both stay mounted so switching is instant — no reload, no flicker. */}
@@ -88,7 +90,13 @@ function ChatsDivision() {
   useEffect(() => { if (uid) refreshRef.current(); }, [badges.messages, uid]);
 
   async function removeChat(item, otherName) {
-    const ok = await confirmAsync('Delete chat?', `This deletes the whole conversation with ${otherName ?? 'this person'} for both of you.`, 'Delete');
+    const ok = await confirmAsync(
+      t('Delete chat?'),
+      otherName
+        ? t('This deletes the whole conversation with {name} for both of you.', { name: otherName })
+        : t('This deletes the whole conversation with this person for both of you.'),
+      t('Delete'),
+    );
     if (!ok) return;
     setData((prev) => {
       const next = (prev ?? []).filter((c) => c.id !== item.id);
@@ -96,7 +104,7 @@ function ChatsDivision() {
       return next;
     });
     const { error } = await supabase.from('chats').delete().eq('id', item.id);
-    if (error) { notify('Could not delete', error.message); refresh(); }
+    if (error) { notify(t('Could not delete'), error.message); refresh(); }
   }
 
   if (first) return <SkeletonList count={4} type="row" />;
@@ -105,13 +113,19 @@ function ChatsDivision() {
     <FlatList
       data={chats}
       keyExtractor={(c) => c.id}
-      contentContainerStyle={{ padding: 16 }}
+      contentContainerStyle={styles.list}
       ListHeaderComponent={
         <View style={{ marginBottom: 12 }}>
-          <Button title="🔍 Find people & add friends" onPress={() => router.push('/search')} />
+          <Button title={t('Find people and add friends')} icon="search-outline" onPress={() => router.push('/search')} />
         </View>
       }
-      ListEmptyComponent={<Text style={styles.empty}>No chats yet. Add a friend, or message an applicant from Review applicants.</Text>}
+      ListEmptyComponent={
+        <EmptyState
+          icon="chatbubbles-outline"
+          title={t('No chats yet')}
+          text={t('Add a friend, or message an applicant from Review applicants.')}
+        />
+      }
       renderItem={({ item }) => {
         const iAmOrganizer = item.organizer_id === session?.user?.id;
         const otherP = iAmOrganizer ? item.participant : item.organizer;
@@ -122,19 +136,28 @@ function ChatsDivision() {
             <TouchableOpacity style={styles.rowMain} onPress={() => router.push(`/chat/${item.id}`)}>
               <Avatar uri={otherP?.avatar_url} name={other} id={otherId} size={44} />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.name, item.unread > 0 && styles.nameUnread]}>{other ?? 'User'}</Text>
+                <Text style={[styles.name, item.unread > 0 && styles.nameUnread]}>{other ?? t('User')}</Text>
                 <Text style={[styles.post, item.unread > 0 && styles.postUnread]} numberOfLines={1}>
-                  {item.post?.title ?? '🤝 Direct message'}
+                  {item.post?.title ?? t('Direct message')}
                 </Text>
-                <Text style={[styles.streak, !item.streak && styles.streakZero]}>
-                  🔥 {item.streak ?? 0} event{item.streak === 1 ? '' : 's'} together
-                </Text>
+                <View style={styles.streakRow}>
+                  <Ionicons name="flame-outline" size={13} color={item.streak ? colors.warn : colors.muted} />
+                  <Text style={[styles.streak, !item.streak && styles.streakZero]}>
+                    {item.streak === 1 ? t('1 event together') : t('{n} events together', { n: item.streak ?? 0 })}
+                  </Text>
+                </View>
               </View>
               <Dot n={item.unread} />
-              {iAmOrganizer && item.post && <Text style={styles.badge}>Applicant</Text>}
+              {iAmOrganizer && item.post && <Text style={styles.badge}>{t('Applicant')}</Text>}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.trash} onPress={() => removeChat(item, other)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 16 }}>🗑️</Text>
+            <TouchableOpacity
+              style={styles.trash}
+              onPress={() => removeChat(item, other)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('Delete chat')}
+            >
+              <Ionicons name="trash-outline" size={18} color={colors.muted} />
             </TouchableOpacity>
           </View>
         );
@@ -185,18 +208,20 @@ function NewsDivision() {
     <FlatList
       data={posts}
       keyExtractor={(p) => p.id}
-      contentContainerStyle={{ padding: 16 }}
+      contentContainerStyle={styles.list}
       ListHeaderComponent={
         isOrg ? (
           <View style={{ marginBottom: 12 }}>
-            <Button title="✍️ Post news" onPress={() => router.push('/news/create')} />
+            <Button title={t('Post news')} icon="create-outline" onPress={() => router.push('/news/create')} />
           </View>
         ) : null
       }
       ListEmptyComponent={
-        <Text style={styles.empty}>
-          {isOrg ? 'No news yet. Tap "Post news" to share an announcement with the school.' : 'No news yet. Organizers post announcements here.'}
-        </Text>
+        <EmptyState
+          icon="newspaper-outline"
+          title={t('No news yet')}
+          text={isOrg ? t('Tap "Post news" to share an announcement with the school.') : t('Organizers post announcements here.')}
+        />
       }
       renderItem={({ item }) => {
         const likes = item.likes ?? [];
@@ -207,7 +232,7 @@ function NewsDivision() {
             <TouchableOpacity style={styles.newsHead} onPress={() => item.author?.id && router.push(`/user/${item.author.id}`)}>
               <Avatar uri={item.author?.avatar_url} name={item.author?.full_name} id={item.author?.id} size={36} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.newsAuthor}>{item.author?.full_name ?? 'Organizer'}</Text>
+                <Text style={styles.newsAuthor}>{item.author?.full_name ?? t('Organizer')}</Text>
                 <Text style={styles.newsTime}>{timeAgo(item.created_at)}</Text>
               </View>
             </TouchableOpacity>
@@ -219,15 +244,30 @@ function NewsDivision() {
             <View style={{ padding: 14 }}>
               <Text style={styles.newsBody} numberOfLines={5}>{item.body}</Text>
               <View style={styles.newsActions}>
-                <TouchableOpacity onPress={() => toggleLike(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={[styles.action, liked && { color: colors.danger }]}>{liked ? '❤️' : '🤍'} {likes.length}</Text>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => toggleLike(item)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={liked ? t('Unlike') : t('Like')}
+                >
+                  <Ionicons name={liked ? 'heart' : 'heart-outline'} size={19} color={liked ? colors.danger : colors.ink} />
+                  <Text style={[styles.action, liked && { color: colors.danger }]}>{likes.length}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push(`/news/${item.id}`)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={styles.action}>💬 {commentCount}</Text>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => router.push(`/news/${item.id}`)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('Comments')}
+                >
+                  <Ionicons name="chatbubble-outline" size={18} color={colors.ink} />
+                  <Text style={styles.action}>{commentCount}</Text>
                 </TouchableOpacity>
                 <View style={{ flex: 1 }} />
-                <TouchableOpacity onPress={() => router.push(`/news/${item.id}`)}>
-                  <Text style={styles.open}>Open →</Text>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => router.push(`/news/${item.id}`)}>
+                  <Text style={styles.open}>{t('Open')}</Text>
+                  <Ionicons name="chevron-forward" size={15} color={colors.brand} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -238,11 +278,12 @@ function NewsDivision() {
   );
 }
 
-function SegBtn({ label, on, onPress, n = 0 }) {
+function SegBtn({ label, icon, on, onPress, n = 0 }) {
   return (
     <TouchableOpacity onPress={onPress} style={[styles.segBtn, on && styles.segBtnOn]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-        <Text style={[styles.segText, on && { color: '#fff' }]}>{label}</Text>
+        {icon ? <Ionicons name={icon} size={15} color={on ? colors.onBrand : colors.muted} /> : null}
+        <Text style={[styles.segText, on && { color: colors.onBrand }]}>{label}</Text>
         <Dot n={n} plain />
       </View>
     </TouchableOpacity>
@@ -251,34 +292,32 @@ function SegBtn({ label, on, onPress, n = 0 }) {
 
 const styles = StyleSheet.create({
   head: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 8 },
-  h1: { fontSize: 22, fontWeight: '800', color: colors.ink },
-  seg: { flexDirection: 'row', backgroundColor: colors.bg, borderRadius: radius.pill, padding: 4, marginTop: 10, borderWidth: 1, borderColor: colors.line },
+  heading: { ...type.h1 },
+  seg: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: radius.pill, padding: 4, marginTop: 10, borderWidth: 1, borderColor: colors.line },
   segBtn: { flex: 1, paddingVertical: 9, borderRadius: radius.pill, alignItems: 'center' },
   segBtnOn: { backgroundColor: colors.brand },
   segText: { fontSize: 13, fontWeight: '700', color: colors.muted },
 
-  row: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: 14, marginBottom: 10 },
+  list: { padding: 16, paddingBottom: 32, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, marginBottom: 10 },
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   trash: { paddingHorizontal: 14, paddingVertical: 18, borderLeftWidth: 1, borderLeftColor: colors.line },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.brand, fontWeight: '800', fontSize: 18 },
   name: { fontSize: 15, fontWeight: '700', color: colors.ink },
   post: { fontSize: 12.5, color: colors.muted, marginTop: 2 },
   nameUnread: { fontWeight: '900' },
   postUnread: { color: colors.ink, fontWeight: '700' },
-  streak: { fontSize: 12.5, color: '#c9772a', fontWeight: '700', marginTop: 3 },
+  streakRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  streak: { fontSize: 12.5, color: colors.warn, fontWeight: '700' },
   streakZero: { color: colors.muted, fontWeight: '600' },
-  badge: { fontSize: 11, color: colors.warn, fontWeight: '700', backgroundColor: colors.warnSoft, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, overflow: 'hidden' },
+  badge: { fontSize: 11, color: colors.warn, fontWeight: '700', backgroundColor: colors.warnSoft, paddingVertical: 4, paddingHorizontal: 8, borderRadius: radius.xs, overflow: 'hidden' },
 
   newsHead: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
-  avatarSm: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
-  avatarSmText: { color: colors.brand, fontWeight: '800', fontSize: 15 },
   newsAuthor: { fontSize: 14.5, fontWeight: '700', color: colors.ink },
   newsTime: { fontSize: 11.5, color: colors.muted, marginTop: 1 },
   newsImage: { width: '100%', height: 240, backgroundColor: colors.bg },
-  newsBody: { fontSize: 14, color: colors.ink, lineHeight: 20 },
+  newsBody: { ...type.body, fontSize: 14.5, lineHeight: 21 },
   newsActions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 12 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   action: { fontSize: 14, color: colors.ink, fontWeight: '700' },
   open: { fontSize: 13, color: colors.brand, fontWeight: '700' },
-  empty: { textAlign: 'center', color: colors.muted, marginTop: 40, fontSize: 14, paddingHorizontal: 20, lineHeight: 21 },
 });

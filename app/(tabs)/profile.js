@@ -9,8 +9,9 @@ import {
 import { promptPush, pushDebug, openPushSettings } from '../../lib/push';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, awardMeta } from '../../lib/theme';
-import { Button, Avatar } from '../../components/ui';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, radius, type, shadow, awardMeta, isDark, setThemePref } from '../../lib/theme';
+import { Button, Avatar, SectionHeader } from '../../components/ui';
 import { sharedStreak } from '../../lib/social';
 import { pickImage, uploadAvatar, canPickImage, pickAndUpload } from '../../lib/news';
 import { notify, confirmAsync } from '../../lib/notify';
@@ -18,6 +19,7 @@ import {
   telegramStatus, telegramUnlink, telegramSetAlsoPush,
   readyTelegramLink, prefetchTelegramLink, forgetTelegramLink,
 } from '../../lib/telegram';
+import { t } from '../../lib/i18n';
 
 const EMPTY_STATS = { applications: 0, posts: 0, incoming: 0, events: [], attended: 0, friends: 0, bestStreak: 0, points: 0, place: null, medals: [] };
 
@@ -26,16 +28,16 @@ const EMPTY_STATS = { applications: 0, posts: 0, incoming: 0, events: [], attend
 // is missing, so a student (or the developer) can see why pushes don't arrive.
 function pushStatusLine(d, uid) {
   if (!d || !d.configured) return null;
-  if (inAppBrowser()) return 'This device: this in-app browser can’t receive notifications';
-  if (d.nativePermission === 'unsupported') return 'This device: this browser can’t receive notifications';
-  if (d.nativePermission === 'denied') return 'This device: blocked in browser settings';
-  if (d.nativePermission !== 'granted') return 'This device: not allowed yet';
-  if (!d.sdkReady) return 'This device: allowed · notification service not reachable';
+  if (inAppBrowser()) return t('This device: this in-app browser can’t receive notifications');
+  if (d.nativePermission === 'unsupported') return t('This device: this browser can’t receive notifications');
+  if (d.nativePermission === 'denied') return t('This device: blocked in browser settings');
+  if (d.nativePermission !== 'granted') return t('This device: not allowed yet');
+  if (!d.sdkReady) return t('This device: allowed · notification service not reachable');
   const subscribed = !!d.subscriptionId && !!d.optedIn;
   const linked = !d.externalId
-    ? 'not linked to your account'
-    : String(d.externalId) === String(uid) ? 'linked' : 'linked to a different account';
-  return `This device: allowed · ${subscribed ? 'subscribed' : 'not subscribed'} · ${linked}`;
+    ? t('not linked to your account')
+    : String(d.externalId) === String(uid) ? t('linked') : t('linked to a different account');
+  return t('This device: allowed · {state} · {linked}', { state: subscribed ? t('subscribed') : t('not subscribed'), linked });
 }
 
 export default function Profile() {
@@ -110,14 +112,14 @@ export default function Profile() {
   const stats = cached ?? EMPTY_STATS;
 
   async function changePhoto() {
-    if (!canPickImage) return notify('Open the web app', 'Photo upload works at tadbirly.expo.app.');
+    if (!canPickImage) return notify(t('Open the web app'), t('Photo upload works at tadbirly.expo.app.'));
     if (profile?.avatar_url) {
-      const replace = await confirmAsync('Profile picture', 'Choose a new photo, or cancel to keep this one.', 'Choose new');
+      const replace = await confirmAsync(t('Profile picture'), t('Choose a new photo, or cancel to keep this one.'), t('Choose new'));
       if (!replace) return;
     }
     const file = await pickImage({ square: true });   // phones get a 1:1 crop
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) return notify('Image too large', 'Please pick a photo under 5 MB.');
+    if (file.size > 5 * 1024 * 1024) return notify(t('Image too large'), t('Please pick a photo under 5 MB.'));
     setPhotoBusy(true);
     try {
       const url = await uploadAvatar(file);
@@ -125,15 +127,15 @@ export default function Profile() {
       if (error) throw error;
       await refreshProfile();
       refresh();
-      notify('Photo updated 📸', '');
+      notify(t('Photo updated'), '');
     } catch (e) {
-      notify('Could not upload', e.message);
+      notify(t('Could not upload'), e.message);
     }
     setPhotoBusy(false);
   }
 
   async function changeCover() {
-    if (!canPickImage) return notify('Open the web app', 'Photo upload works at tadbirly.expo.app.');
+    if (!canPickImage) return notify(t('Open the web app'), t('Photo upload works at tadbirly.expo.app.'));
     if (coverBusy) return;
     setCoverBusy(true);
     try {
@@ -142,36 +144,39 @@ export default function Profile() {
       const { error } = await supabase.from('profiles').update({ cover_url: url }).eq('id', session.user.id);
       if (error) throw error;
       await refreshProfile();
-      notify('Cover updated 🖼️', '');
+      notify(t('Cover updated'), '');
     } catch (e) {
-      notify('Could not update cover', e.message || 'Please try a smaller image.');
+      notify(t('Could not update cover'), e.message || t('Please try a smaller image.'));
     }
     setCoverBusy(false);
   }
 
   async function removeCover() {
-    if (!(await confirmAsync('Remove cover photo?', 'Your banner goes back to plain green.', 'Remove'))) return;
+    if (!(await confirmAsync(t('Remove cover photo?'), t('Your banner goes back to plain green.'), t('Remove')))) return;
     setCoverBusy(true);
     const { error } = await supabase.from('profiles').update({ cover_url: null }).eq('id', session.user.id);
-    if (error) notify('Could not remove', error.message);
+    if (error) notify(t('Could not remove'), error.message);
     else await refreshProfile();
     setCoverBusy(false);
   }
 
+  const ranked = stats.points > 0 && stats.place;
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 60 }}>
+      <ScrollView contentContainerStyle={styles.page}>
         {/* Cover banner */}
         <View style={styles.banner}>
           {profile?.cover_url ? (
             <>
               <Image source={{ uri: profile.cover_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
               <View style={styles.bannerBtns}>
-                <TouchableOpacity style={styles.bannerPill} onPress={changeCover} disabled={coverBusy}>
-                  <Text style={styles.bannerPillText}>{coverBusy ? '⏳ Working…' : '🖼️ Change'}</Text>
+                <TouchableOpacity style={styles.bannerPill} onPress={changeCover} disabled={coverBusy} accessibilityLabel={t('Change cover photo')}>
+                  <Ionicons name={coverBusy ? 'hourglass-outline' : 'image-outline'} size={13} color="#fff" />
+                  <Text style={styles.bannerPillText}>{coverBusy ? t('Working…') : t('Change')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.bannerPill} onPress={removeCover} disabled={coverBusy}>
-                  <Text style={styles.bannerPillText}>✕ Remove</Text>
+                <TouchableOpacity style={styles.bannerPill} onPress={removeCover} disabled={coverBusy} accessibilityLabel={t('Remove cover photo')}>
+                  <Ionicons name="trash-outline" size={13} color="#fff" />
                 </TouchableOpacity>
               </View>
             </>
@@ -182,9 +187,10 @@ export default function Profile() {
               activeOpacity={0.85}
               disabled={coverBusy}
             >
-              <Text style={styles.bannerEmptyText}>
-                {coverBusy ? '⏳ Uploading…' : '📷 Tap to add a cover photo'}
-              </Text>
+              <View style={styles.bannerAdd}>
+                <Ionicons name={coverBusy ? 'hourglass-outline' : 'image-outline'} size={14} color="#fff" />
+                <Text style={styles.bannerEmptyText}>{coverBusy ? t('Uploading…') : t('Add a cover photo')}</Text>
+              </View>
             </TouchableOpacity>
           )}
         </View>
@@ -192,99 +198,123 @@ export default function Profile() {
         {/* box-none so this overlapping header doesn't swallow taps meant for
             the banner buttons underneath it */}
         <View style={styles.head} pointerEvents="box-none">
-          <TouchableOpacity onPress={changePhoto} activeOpacity={0.85} style={styles.pfpWrap} disabled={photoBusy}>
+          <TouchableOpacity onPress={changePhoto} activeOpacity={0.85} style={styles.pfpWrap} disabled={photoBusy} accessibilityLabel={t('Change profile photo')}>
             <Avatar uri={profile?.avatar_url} name={profile?.full_name} id={session?.user?.id} size={92} style={styles.pfpRing} />
             <View style={styles.camera}>
-              <Text style={{ fontSize: 13 }}>{photoBusy ? '⏳' : '📷'}</Text>
+              <Ionicons name={photoBusy ? 'hourglass-outline' : 'camera'} size={14} color={colors.ink} />
             </View>
           </TouchableOpacity>
-          <Text style={styles.name}>{profile?.full_name ?? 'Your name'}</Text>
+          <Text style={styles.name}>{profile?.full_name ?? t('Your name')}</Text>
           <Text style={styles.role}>
-            {(profile?.role ?? 'participant')} · {profile?.city ?? 'Tashkent'}
+            {profile?.role === 'organizer' ? t('Organizer') : t('Participant')} · {t(profile?.city ?? 'Tashkent')}
           </Text>
           <View style={styles.badges}>
-            {profile?.verified_student && <Badge text="✔ Verified student" />}
-            {isOrg && <Badge text="🎪 Verified organizer" />}
+            {profile?.verified_student && <Badge icon="checkmark-circle" text={t('Verified student')} />}
+            {isOrg && <Badge icon="shield-checkmark" text={t('Verified organizer')} />}
           </View>
         </View>
 
-        {/* Ranking strip */}
-        <TouchableOpacity style={styles.rankStrip} onPress={() => router.push('/leaderboard')} activeOpacity={0.9}>
-          <Text style={styles.rankStripLeft}>🏆 {stats.points > 0 ? `#${stats.place} in school` : 'Unranked'}</Text>
-          <Text style={styles.rankStripRight}>{stats.points} pts ›</Text>
-        </TouchableOpacity>
+        {/* Headline numbers */}
+        <View style={styles.statsCard}>
+          <Stat
+            icon="trophy-outline"
+            value={ranked ? `#${stats.place}` : '—'}
+            label={`${stats.points} pts`}
+            onPress={() => router.push('/leaderboard')}
+          />
+          <View style={styles.statDivider} />
+          <Stat icon="people-outline" value={stats.friends} label={t('Friends')} onPress={() => uid && router.push(`/friends/${uid}`)} />
+          <View style={styles.statDivider} />
+          <Stat icon="flame-outline" value={stats.bestStreak} label={t('Best streak')} />
+          <View style={styles.statDivider} />
+          <Stat icon="shield-checkmark-outline" value={`${profile?.reliability ?? 75}%`} label={t('Reliability')} />
+        </View>
+
+        <View style={styles.statsCard}>
+          {isOrg ? (
+            <>
+              <Stat value={stats.posts} label={t('Events hosted')} />
+              <View style={styles.statDivider} />
+              <Stat value={stats.incoming} label={t('Applicants')} />
+              <View style={styles.statDivider} />
+              <Stat value={stats.attended} label={t('Attended')} />
+            </>
+          ) : (
+            <>
+              <Stat value={stats.applications} label={t('Applications')} />
+              <View style={styles.statDivider} />
+              <Stat value={stats.attended} label={t('Events attended')} />
+            </>
+          )}
+        </View>
 
         {stats.medals?.length > 0 && (
-          <View style={styles.medalGrid}>
-            {stats.medals.map((a) => (
-              <View key={a.id} style={styles.medalTile}>
-                <Text style={{ fontSize: 24 }}>{awardMeta(a).emoji}</Text>
-                <Text style={styles.medalLabel} numberOfLines={2}>{a.badge?.name ?? awardMeta(a).label}</Text>
-              </View>
-            ))}
-          </View>
+          <>
+            <SectionHeader title={t('Pinned medals')} />
+            <View style={styles.medalGrid}>
+              {stats.medals.map((a) => (
+                <View key={a.id} style={styles.medalTile}>
+                  <Text style={{ fontSize: 24 }}>{awardMeta(a).emoji}</Text>
+                  <Text style={styles.medalLabel} numberOfLines={2}>{a.badge?.name ?? awardMeta(a).label}</Text>
+                </View>
+              ))}
+            </View>
+          </>
         )}
 
         {/* Student Passport — the main action on this screen */}
         <TouchableOpacity style={styles.passport} onPress={() => router.push('/passport')} activeOpacity={0.9}>
-          <Text style={styles.passportEmoji}>🪪</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.passportTitle}>Student Passport</Text>
-            <Text style={styles.passportSub}>Your education, tests, skills, contacts & medals — what organizers see.</Text>
+          <View style={styles.passportIcon}>
+            <Ionicons name="id-card-outline" size={24} color={colors.lime} />
           </View>
-          <Text style={styles.passportArrow}>›</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.passportTitle}>{t('Student Passport')}</Text>
+            <Text style={styles.passportSub}>{t('Education, tests, skills, contacts and medals: what organizers see.')}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.8)" />
         </TouchableOpacity>
 
-        {!isOrg && (
-          <Text style={styles.orgHint}>Want to host events? Ask a Tadbirly admin to unlock organizer access.</Text>
-        )}
-
-        {/* Social stats */}
-        <View style={styles.statRow}>
-          <Stat value={stats.friends} label="Friends ›" onPress={() => uid && router.push(`/friends/${uid}`)} />
-          <Stat value={stats.bestStreak > 0 ? `🔥 ${stats.bestStreak}` : '🔥 0'} label="Best streak" />
-          <Stat value={`${profile?.reliability ?? 75}%`} label="Reliability" />
-        </View>
-
-        {isOrg ? (
+        {isOrg && (
           <>
-            <View style={styles.statRow}>
-              <Stat value={stats.posts} label="Events hosted" />
-              <Stat value={stats.incoming} label="Applicants" />
-              <Stat value={stats.attended} label="Events attended" />
-            </View>
-            <Text style={styles.section}>Your events</Text>
+            <SectionHeader title={t('Your events')} />
             {stats.events.length === 0 ? (
-              <Text style={styles.dim}>None yet. Create one from the Post event tab.</Text>
+              <Text style={styles.dim}>{t('None yet. Create one from the Post event tab.')}</Text>
             ) : (
-              stats.events.map((e) => {
-                const done = e.status === 'completed';
-                return (
-                  <TouchableOpacity key={e.id} style={[styles.pastRow, done && { opacity: 0.85 }]} onPress={() => router.push(`/post/${e.id}`)}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.pastTitle}>🎪 {e.title}</Text>
-                      <Text style={styles.pastMeta}>{e.event_date ?? 'no date'} · open →</Text>
-                    </View>
-                    {done && <Text style={styles.finished}>🏁 FINISHED</Text>}
-                  </TouchableOpacity>
-                );
-              })
+              <View style={styles.menu}>
+                {stats.events.map((e, i) => {
+                  const done = e.status === 'completed';
+                  return (
+                    <TouchableOpacity
+                      key={e.id}
+                      style={[styles.menuRow, i === stats.events.length - 1 && { borderBottomWidth: 0 }]}
+                      onPress={() => router.push(`/post/${e.id}`)}
+                    >
+                      <View style={styles.menuIcon}><Ionicons name="calendar-outline" size={17} color={colors.brand} /></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.menuText} numberOfLines={1}>{e.title}</Text>
+                        <Text style={styles.menuSub}>{e.event_date ?? t('No date')}</Text>
+                      </View>
+                      {done && <Text style={styles.finished}>{t('Finished')}</Text>}
+                      <Ionicons name="chevron-forward" size={17} color={colors.faint} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             )}
           </>
-        ) : (
-          <View style={styles.statRow}>
-            <Stat value={stats.applications} label="Applications" />
-            <Stat value={stats.attended} label="Events attended" />
-            <View style={{ flex: 1 }} />
-          </View>
         )}
 
-        <TouchableOpacity style={styles.coach} onPress={() => router.push('/coach')}>
-          <Text style={styles.coachTitle}>🧭 AI Career Coach</Text>
-          <Text style={styles.coachBody}>Get a personalized suggestion for your next event to grow your profile.</Text>
-          <Text style={styles.coachCta}>→ Open coach</Text>
-        </TouchableOpacity>
+        <SectionHeader title={t('Grow')} />
+        <View style={styles.menu}>
+          <MenuRow icon="bookmark-outline" label={t('Saved events')} sub={t('Bookmarks and deadline reminders')} onPress={() => router.push('/saved')} />
+          {isOrg && <MenuRow icon="stats-chart-outline" label={t('Event stats')} sub={t('Views, applications, check-ins, ratings')} onPress={() => router.push('/dashboard')} />}
+          <MenuRow icon="compass-outline" label={t('AI Career Coach')} sub={t('A suggestion for your next event')} onPress={() => router.push('/coach')} last />
+        </View>
+        {!isOrg && (
+          <Text style={styles.orgHint}>{t('Want to host events? Ask a Tadbirly admin to unlock organizer access.')}</Text>
+        )}
 
+        <SectionHeader title={t('Notifications')} />
         {/* Web push (browser) here; the iOS / Android app has its own section. */}
         {Platform.OS !== 'web' ? (
           <NativePushSection uid={uid} info={pushInfo} setInfo={setPushInfo} />
@@ -292,14 +322,20 @@ export default function Profile() {
           <>
             <Button
               title={inAppBrowser()
-                ? '🌐 Open in your browser for notifications'
+                ? t('Open in your browser for notifications')
                 : notifState === 'granted'
-                  ? '🔔 Notifications on — tap to refresh'
+                  ? t('Notifications on: tap to refresh')
                   : notifState === 'denied'
-                    ? '🔕 Notifications blocked — how to fix'
-                    : '🔔 Turn on notifications'}
+                    ? t('Notifications blocked: how to fix')
+                    : t('Turn on notifications')}
+              icon={inAppBrowser()
+                ? 'globe-outline'
+                : notifState === 'granted'
+                  ? 'notifications'
+                  : notifState === 'denied'
+                    ? 'notifications-off-outline'
+                    : 'notifications-outline'}
               variant="ghost"
-              style={{ marginTop: 18 }}
               loading={notifBusy}
               onPress={() => {
                 // Telegram & co. can't do notifications at all: send them to a real browser.
@@ -318,21 +354,21 @@ export default function Profile() {
                   if (r === 'granted') {
                     ping(); buzz();
                     const linked = d?.subscriptionId && d?.optedIn && String(d?.externalId) === String(uid);
-                    notify('Notifications on 🔔', linked
-                      ? "This device is linked. You'll be told about invites, acceptances and points."
-                      : 'Allowed. This device is still being connected — the line under the button shows how far it got.');
+                    notify(t('Notifications on'), linked
+                      ? t('This device is linked. You\'ll be told about invites, acceptances and points.')
+                      : t('Allowed. This device is still being connected — the line under the button shows how far it got.'));
                     return;
                   }
                   const help = notificationHelp(r);
                   if (help) notify(help.title, help.body);
-                  else notify('Not enabled', 'Tap the button again and choose Allow when your browser asks.');
+                  else notify(t('Not enabled'), t('Tap the button again and choose Allow when your browser asks.'));
                 });
               }}
             />
             {pushStatusLine(pushInfo, uid) ? (
               <Text
                 style={styles.pushStatus}
-                onPress={() => pushInfo && notify('Notification status', [
+                onPress={() => pushInfo && notify(t('Notification status'), [
                   `Browser permission: ${pushInfo.nativePermission}`,
                   `Subscription: ${pushInfo.subscriptionId || 'none'}${pushInfo.optedIn ? ' (opted in)' : ''}`,
                   `Linked to: ${pushInfo.externalId ? (String(pushInfo.externalId) === String(uid) ? 'this account' : 'another account') : 'no account'}`,
@@ -344,8 +380,14 @@ export default function Profile() {
           </>
         )}
         <TelegramCard uid={uid} />
-        <Button title="Privacy & account" variant="ghost" style={{ marginTop: 14 }} onPress={() => router.push('/legal')} />
-        <Button title="Log out" variant="ghost" style={{ marginTop: 12 }} onPress={signOut} />
+
+        <SectionHeader title={t('Account')} />
+        <View style={styles.menu}>
+          <DarkModeRow />
+          <MenuRow icon="settings-outline" label={t('Settings')} sub={t('Language, dark mode, interests')} onPress={() => router.push('/settings')} />
+          <MenuRow icon="lock-closed-outline" label={t('Privacy & account')} onPress={() => router.push('/legal')} />
+          <MenuRow icon="log-out-outline" label={t('Log out')} onPress={signOut} danger last />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -358,15 +400,15 @@ export default function Profile() {
 // ---------------------------------------------------------------------------
 function nativeStatusLine(d, uid) {
   if (!d) return null;
-  if (!d.configured) return 'This phone: notifications aren’t available in this build';
-  if (d.nativePermission === 'denied') return 'This phone: switched off in Settings';
-  if (d.nativePermission !== 'granted') return 'This phone: not allowed yet';
-  if (!d.sdkReady) return 'This phone: allowed · notification service not reachable';
+  if (!d.configured) return t('This phone: notifications aren’t available in this build');
+  if (d.nativePermission === 'denied') return t('This phone: switched off in Settings');
+  if (d.nativePermission !== 'granted') return t('This phone: not allowed yet');
+  if (!d.sdkReady) return t('This phone: allowed · notification service not reachable');
   const subscribed = !!d.subscriptionId && !!d.optedIn;
   const linked = !d.externalId
-    ? 'not linked to your account'
-    : String(d.externalId) === String(uid) ? 'linked' : 'linked to a different account';
-  return `This phone: allowed · ${subscribed ? 'subscribed' : 'not subscribed yet'} · ${linked}`;
+    ? t('not linked to your account')
+    : String(d.externalId) === String(uid) ? t('linked') : t('linked to a different account');
+  return t('This phone: allowed · {state} · {linked}', { state: subscribed ? t('subscribed') : t('not subscribed yet'), linked });
 }
 
 function NativePushSection({ uid, info, setInfo }) {
@@ -385,14 +427,14 @@ function NativePushSection({ uid, info, setInfo }) {
 
   const perm = info?.nativePermission;
   if (info && !info.configured) {
-    return <Text style={[styles.pushStatus, { marginTop: 18 }]}>{nativeStatusLine(info, uid)}</Text>;
+    return <Text style={[styles.pushStatus, { marginTop: 0 }]}>{nativeStatusLine(info, uid)}</Text>;
   }
 
   async function offerSettings() {
     const go = await confirmAsync(
-      'Notifications are off',
-      'Switch them on for Tadbirly in your phone’s Settings → Notifications.',
-      'Open Settings',
+      t('Notifications are off'),
+      t('Switch them on for Tadbirly in your phone’s Settings → Notifications.'),
+      t('Open Settings'),
     );
     if (go) openPushSettings();
   }
@@ -408,9 +450,9 @@ function NativePushSection({ uid, info, setInfo }) {
       if (r === 'granted') {
         buzz();
         const linked = d?.subscriptionId && d?.optedIn && String(d?.externalId) === String(uid);
-        notify('Notifications on 🔔', linked
-          ? "This phone is linked. You'll be told about invites, acceptances and points."
-          : 'Allowed. This phone is still being connected — the line under the button shows how far it got.');
+        notify(t('Notifications on'), linked
+          ? t('This phone is linked. You\'ll be told about invites, acceptances and points.')
+          : t('Allowed. This phone is still being connected — the line under the button shows how far it got.'));
       } else if (r === 'denied') {
         offerSettings();
       }
@@ -422,19 +464,19 @@ function NativePushSection({ uid, info, setInfo }) {
     <>
       <Button
         title={perm === 'granted'
-          ? '🔔 Notifications on — tap to refresh'
+          ? t('Notifications on: tap to refresh')
           : perm === 'denied'
-            ? '🔕 Notifications off — open Settings'
-            : '🔔 Turn on notifications'}
+            ? t('Notifications off: open Settings')
+            : t('Turn on notifications')}
+        icon={perm === 'granted' ? 'notifications' : perm === 'denied' ? 'notifications-off-outline' : 'notifications-outline'}
         variant="ghost"
-        style={{ marginTop: 18 }}
         loading={busy}
         onPress={onPress}
       />
       {line ? (
         <Text
           style={styles.pushStatus}
-          onPress={() => info && notify('Notification status', [
+          onPress={() => info && notify(t('Notification status'), [
             `Permission: ${info.nativePermission}`,
             `Subscription: ${info.subscriptionId || 'none'}${info.optedIn ? ' (opted in)' : ''}`,
             `Linked to: ${info.externalId ? (String(info.externalId) === String(uid) ? 'this account' : 'another account') : 'no account'}`,
@@ -447,16 +489,68 @@ function NativePushSection({ uid, info, setInfo }) {
   );
 }
 
-function Badge({ text }) {
-  return <Text style={styles.badge}>{text}</Text>;
+function Badge({ icon, text }) {
+  return (
+    <View style={styles.badge}>
+      <Ionicons name={icon} size={13} color={colors.brand} />
+      <Text style={styles.badgeText}>{text}</Text>
+    </View>
+  );
 }
-function Stat({ value, label, onPress }) {
+function Stat({ icon, value, label, onPress }) {
   const Wrap = onPress ? TouchableOpacity : View;
   return (
-    <Wrap style={styles.stat} onPress={onPress} activeOpacity={0.85}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+    <Wrap style={styles.stat} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.statTop}>
+        {icon ? <Ionicons name={icon} size={14} color={colors.brand} /> : null}
+        <Text style={styles.statValue}>{value}</Text>
+      </View>
+      <Text style={styles.statLabel} numberOfLines={1}>{label}</Text>
     </Wrap>
+  );
+}
+// One-tap light/dark switch. The web reloads straight into the new look; the
+// phone apps build their colours at launch, so they switch on the next start.
+function DarkModeRow() {
+  const [on, setOn] = useState(isDark);
+  function change(v) {
+    setOn(v);
+    const applied = setThemePref(v ? 'dark' : 'light');
+    if (!applied) notify(t('Saved'), t('Close and reopen Tadbirly to switch the look.'));
+  }
+  return (
+    <View style={styles.menuRow}>
+      <View style={styles.menuIcon}>
+        <Ionicons name={on ? 'moon' : 'sunny-outline'} size={17} color={colors.brand} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.menuText}>{t('Dark mode')}</Text>
+        <Text style={styles.menuSub}>{on ? t('On') : t('Off')}</Text>
+      </View>
+      <Switch
+        value={on}
+        onValueChange={change}
+        trackColor={{ false: colors.lineStrong, true: colors.brand }}
+        thumbColor="#fff"
+        activeThumbColor="#fff"
+        accessibilityLabel={t('Dark mode')}
+      />
+    </View>
+  );
+}
+
+function MenuRow({ icon, label, sub, onPress, danger, last }) {
+  return (
+    <TouchableOpacity style={[styles.menuRow, last && { borderBottomWidth: 0 }]} onPress={onPress} activeOpacity={0.7}>
+      <View style={[styles.menuIcon, danger && { backgroundColor: colors.dangerSoft }]}>
+        <Ionicons name={icon} size={17} color={danger ? colors.danger : colors.brand} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.menuText, danger && { color: colors.danger }]}>{label}</Text>
+        {sub ? <Text style={styles.menuSub}>{sub}</Text> : null}
+      </View>
+      {!danger && <Ionicons name="chevron-forward" size={17} color={colors.faint} />}
+    </TouchableOpacity>
   );
 }
 
@@ -485,7 +579,7 @@ function pageHidden() {
 // browsers (iPhone Safari above all) block a new tab opened any later.
 function openTelegramLink(url) {
   if (Platform.OS !== 'web') {
-    Linking.openURL(url).catch(() => notify('Could not open Telegram', 'Make sure Telegram is installed, then try again.'));
+    Linking.openURL(url).catch(() => notify(t('Could not open Telegram'), t('Make sure Telegram is installed, then try again.')));
     return;
   }
   let win = null;
@@ -619,7 +713,7 @@ function TelegramCard({ uid }) {
       if (!mounted.current) return;
       setBusy(false);
       if (!data) {
-        notify('Could not connect Telegram', error?.message || 'Please check your connection and try again.');
+        notify(t('Could not connect Telegram'), error?.message || t('Please check your connection and try again.'));
         return;
       }
       openTelegramLink(data);
@@ -629,9 +723,9 @@ function TelegramCard({ uid }) {
 
   async function disconnect() {
     const sure = await confirmAsync(
-      'Disconnect Telegram?',
-      'Tadbirly notifications will stop arriving in Telegram.',
-      'Disconnect',
+      t('Disconnect Telegram?'),
+      t('Tadbirly notifications will stop arriving in Telegram.'),
+      t('Disconnect'),
     );
     if (!sure) return;
     setBusy(true);
@@ -639,7 +733,7 @@ function TelegramCard({ uid }) {
     if (!mounted.current) return;
     setBusy(false);
     if (error) {
-      notify('Could not disconnect', error.message || 'Please try again.');
+      notify(t('Could not disconnect'), error.message || t('Please try again.'));
       return;
     }
     tappedAt.current = 0;
@@ -656,7 +750,7 @@ function TelegramCard({ uid }) {
     const { error } = await telegramSetAlsoPush(v);
     if (!mounted.current || !error) return;
     setTg({ ...tgRef.current, also_push: before.also_push });
-    notify('Could not save', error.message || 'Please try again.');
+    notify(t('Could not save'), error.message || t('Please try again.'));
   }
 
   if (!tg || !tg.available) return null;
@@ -665,33 +759,33 @@ function TelegramCard({ uid }) {
     return (
       <View ref={cardRef} style={styles.tgCard}>
         <View style={styles.tgHead}>
-          <Text style={styles.tgIcon}>✈️</Text>
+          <View style={styles.tgIcon}><Ionicons name="paper-plane" size={18} color="#fff" /></View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.tgTitle, justLinked && { color: colors.brand }]}>
-              {justLinked ? 'Connected ✓' : 'Telegram notifications'}
+              {justLinked ? t('Connected') : t('Telegram notifications')}
             </Text>
             <Text style={styles.tgSub}>
               {justLinked
-                ? 'All set — your notifications will arrive in Telegram.'
-                : tg.username ? `Connected as @${tg.username}` : 'Connected'}
+                ? t('All set — your notifications will arrive in Telegram.')
+                : tg.username ? t('Connected as @{name}', { name: tg.username }) : t('Connected')}
             </Text>
           </View>
         </View>
         {/* Browser notifications only exist on the web. */}
         {Platform.OS === 'web' && (
           <View style={styles.tgRow}>
-            <Text style={styles.tgRowText}>Also send browser notifications</Text>
+            <Text style={styles.tgRowText}>{t('Also send browser notifications')}</Text>
             <Switch
               value={!!tg.also_push}
               onValueChange={changeAlsoPush}
               trackColor={{ false: colors.line, true: colors.brand }}
               thumbColor="#fff"
               activeThumbColor="#fff"
-              accessibilityLabel="Also send browser notifications"
+              accessibilityLabel={t('Also send browser notifications')}
             />
           </View>
         )}
-        <Button title="Disconnect" variant="ghost" style={{ marginTop: 12 }} loading={busy} onPress={disconnect} />
+        <Button title={t('Disconnect')} variant="ghost" style={{ marginTop: 12 }} loading={busy} onPress={disconnect} />
       </View>
     );
   }
@@ -699,74 +793,70 @@ function TelegramCard({ uid }) {
   return (
     <View ref={cardRef} style={styles.tgCard}>
       <View style={styles.tgHead}>
-        <Text style={styles.tgIcon}>✈️</Text>
+        <View style={styles.tgIcon}><Ionicons name="paper-plane" size={18} color="#fff" /></View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.tgTitle}>Telegram notifications</Text>
-          <Text style={styles.tgSub}>Works on every phone — even iPhones without installing Tadbirly.</Text>
+          <Text style={styles.tgTitle}>{t('Telegram notifications')}</Text>
+          <Text style={styles.tgSub}>{t('Works on every phone, even iPhones without installing Tadbirly.')}</Text>
         </View>
       </View>
       <Button
-        title="Connect Telegram"
+        title={t('Connect Telegram')}
         loading={busy}
         onPress={connect}
         style={{ marginTop: 12, backgroundColor: TG_BLUE }}
       />
       {waiting ? (
-        <Text style={styles.tgHint}>Press Start in Telegram — this updates by itself.</Text>
+        <Text style={styles.tgHint}>{t('Press Start in Telegram — this updates by itself.')}</Text>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  banner: { height: 110, marginHorizontal: -18, backgroundColor: colors.brand, overflow: 'hidden' },
+  page: { paddingHorizontal: 16, paddingBottom: 60, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  banner: { height: 120, marginHorizontal: -16, backgroundColor: colors.brand, overflow: 'hidden' },
   // Top of the banner, clear of the avatar that overlaps the bottom edge.
   bannerBtns: { position: 'absolute', right: 12, top: 10, flexDirection: 'row', gap: 8 },
-  bannerPill: { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12 },
-  bannerPillText: { color: '#fff', fontSize: 11.5, fontWeight: '700' },
+  bannerPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 11 },
+  bannerPillText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   bannerEmpty: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  bannerEmptyText: { color: 'rgba(255,255,255,0.92)', fontSize: 12.5, fontWeight: '700' },
-  head: { alignItems: 'center', paddingBottom: 10, marginTop: -46 },
+  bannerAdd: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12 },
+  bannerEmptyText: { color: '#fff', fontSize: 12.5, fontWeight: '600' },
+  head: { alignItems: 'center', paddingBottom: 6, marginTop: -46 },
   pfpWrap: { position: 'relative' },
   pfpRing: { borderWidth: 4, borderColor: colors.bg },
-  camera: { position: 'absolute', right: -2, bottom: -2, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.card, borderWidth: 2, borderColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
-  rankStrip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.ink, borderRadius: radius.md, paddingVertical: 13, paddingHorizontal: 16, marginTop: 4 },
-  rankStripLeft: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  rankStripRight: { color: '#e8c96a', fontWeight: '800', fontSize: 14 },
-  medalGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  camera: { position: 'absolute', right: 0, bottom: 2, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', ...shadow.sm },
+  name: { ...type.h1, fontSize: 22, marginTop: 10 },
+  role: { fontSize: 13.5, color: colors.muted, marginTop: 2, textTransform: 'capitalize' },
+  badges: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.brandSoft, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 },
+  badgeText: { fontSize: 12, color: colors.brand, fontWeight: '600' },
+  statsCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, paddingVertical: 14, marginTop: 12, ...shadow.sm },
+  stat: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  statTop: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statValue: { fontSize: 18, fontWeight: '800', color: colors.ink, letterSpacing: -0.3 },
+  statLabel: { fontSize: 11.5, color: colors.muted, marginTop: 3 },
+  statDivider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.line },
+  medalGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   medalTile: { width: 86, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, paddingVertical: 12, paddingHorizontal: 6, alignItems: 'center' },
   medalLabel: { fontSize: 10.5, color: colors.muted, textAlign: 'center', marginTop: 6, lineHeight: 14 },
-  pfp: { width: 78, height: 78, borderRadius: 39, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  pfpText: { color: '#fff', fontSize: 28, fontWeight: '800' },
-  name: { fontSize: 20, fontWeight: '800', color: colors.ink },
-  role: { fontSize: 13, color: colors.muted, marginTop: 2, textTransform: 'capitalize' },
-  badges: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' },
-  badge: { fontSize: 11.5, backgroundColor: colors.brandSoft, color: colors.brand, paddingVertical: 5, paddingHorizontal: 11, borderRadius: 20, fontWeight: '700', overflow: 'hidden' },
-  passport: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.brand, borderRadius: radius.lg, padding: 16, marginTop: 16, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
-  passportEmoji: { fontSize: 34 },
-  passportTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  passportSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12.5, marginTop: 3, lineHeight: 17 },
-  passportArrow: { color: '#fff', fontSize: 30, fontWeight: '300' },
-  orgHint: { fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: 12, lineHeight: 17, paddingHorizontal: 10 },
-  statRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  stat: { flex: 1, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 14, alignItems: 'center' },
-  statValue: { fontSize: 18, fontWeight: '800', color: colors.ink },
-  statLabel: { fontSize: 11, color: colors.muted, marginTop: 2 },
-  section: { fontSize: 14, fontWeight: '800', color: colors.ink, marginTop: 22, marginBottom: 8 },
+  passport: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.brand, borderRadius: radius.lg, padding: 16, marginTop: 16, ...shadow.md },
+  passportIcon: { width: 46, height: 46, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  passportTitle: { color: '#fff', fontSize: 16.5, fontWeight: '700' },
+  passportSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12.5, marginTop: 3, lineHeight: 17 },
+  orgHint: { fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: 10, lineHeight: 17, paddingHorizontal: 10 },
   dim: { fontSize: 13, color: colors.muted, lineHeight: 20 },
-  pastRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 14, marginBottom: 10 },
-  pastTitle: { fontSize: 14.5, fontWeight: '700', color: colors.ink },
-  pastMeta: { fontSize: 12, color: colors.muted, marginTop: 3 },
-  finished: { fontSize: 10.5, fontWeight: '900', color: '#fff', backgroundColor: colors.danger, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, overflow: 'hidden', marginLeft: 8, letterSpacing: 0.5 },
-  coach: { backgroundColor: colors.ink, borderRadius: radius.lg, padding: 16, marginTop: 18 },
-  coachTitle: { color: '#fff', fontSize: 15, fontWeight: '800' },
-  coachBody: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 6, lineHeight: 19 },
-  coachCta: { color: '#8fb4ff', fontWeight: '700', marginTop: 10 },
+  menu: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, overflow: 'hidden' },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  menuIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
+  menuText: { fontSize: 15, fontWeight: '600', color: colors.ink },
+  menuSub: { fontSize: 12.5, color: colors.muted, marginTop: 1 },
+  finished: { fontSize: 11, fontWeight: '700', color: colors.muted, backgroundColor: colors.bg, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 999, overflow: 'hidden' },
   pushStatus: { fontSize: 11.5, color: colors.muted, textAlign: 'center', marginTop: 6, lineHeight: 16 },
-  tgCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 16, marginTop: 18 },
+  tgCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 16, marginTop: 12 },
   tgHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  tgIcon: { fontSize: 26 },
-  tgTitle: { fontSize: 15, fontWeight: '800', color: colors.ink },
+  tgIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: TG_BLUE, alignItems: 'center', justifyContent: 'center' },
+  tgTitle: { fontSize: 15, fontWeight: '700', color: colors.ink },
   tgSub: { fontSize: 12.5, color: colors.muted, marginTop: 3, lineHeight: 17 },
   tgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 14 },
   tgRowText: { flex: 1, fontSize: 13.5, fontWeight: '600', color: colors.ink },

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, ScrollView, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius } from '../../lib/theme';
-import { Button } from '../../components/ui';
+import { colors, radius, type } from '../../lib/theme';
+import { Button, TextField } from '../../components/ui';
 import { notify } from '../../lib/notify';
 import { pickImage, uploadNewsImage, canPickImage, releasePreview } from '../../lib/news';
+import { t } from '../../lib/i18n';
 
 export default function CreateNews() {
   const router = useRouter();
@@ -19,7 +21,7 @@ export default function CreateNews() {
   async function choose() {
     const picked = await pickImage();
     if (!picked) return;
-    if (picked.size > 5 * 1024 * 1024) return notify('Image too large', 'Please pick a photo under 5 MB.');
+    if (picked.size > 5 * 1024 * 1024) return notify(t('Image too large'), t('Please pick a photo under 5 MB.'));
     releasePreview(file);
     setFile(picked);
     // A blob: URL on the web, the picked file's uri natively.
@@ -27,7 +29,7 @@ export default function CreateNews() {
   }
 
   async function publish() {
-    if (!body.trim()) return notify('Write something', 'Add the text of your announcement.');
+    if (!body.trim()) return notify(t('Write something'), t('Add the text of your announcement.'));
     setSaving(true);
     try {
       let imageUrl = null;
@@ -38,52 +40,54 @@ export default function CreateNews() {
         .select('id')
         .single();
       if (error) throw error;
-      notify('Posted 📰', 'Your news is live in the Social tab.');
+      notify(t('Posted'), t('Your news is live in the Social tab.'));
       router.replace(`/news/${data.id}`);
     } catch (e) {
-      notify('Could not post', e.message);
+      notify(t('Could not post'), e.message);
     }
     setSaving(false);
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 18, paddingBottom: 40 }}>
-      <Text style={styles.h1}>Post news</Text>
-      <Text style={styles.sub}>Share an announcement, a recap or a photo with everyone at your school.</Text>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={styles.page}>
+      <Text style={styles.h1}>{t('Post news')}</Text>
+      <Text style={styles.sub}>{t('Share an announcement, a recap or a photo with everyone at your school.')}</Text>
 
-      <Text style={styles.label}>Your announcement</Text>
-      <TextInput
-        style={[styles.input, { height: 140, textAlignVertical: 'top' }]}
+      <TextField
+        label={t('Your announcement')}
         value={body}
         onChangeText={setBody}
         multiline
-        placeholder="TashMUN 2026 was a huge success — 40 delegates, 3 committees…"
-        placeholderTextColor={colors.muted}
+        placeholder={t('TashMUN 2026 was a huge success: 40 delegates, 3 committees…')}
+        inputStyle={{ height: 150, textAlignVertical: 'top' }}
+        style={{ marginTop: 20 }}
       />
 
-      <Text style={styles.label}>Photo (optional)</Text>
+      <Text style={styles.label}>{t('Photo (optional)')}</Text>
       {preview ? (
         <View>
           <Image source={{ uri: preview }} style={styles.preview} resizeMode="cover" />
-          <TouchableOpacity onPress={() => { releasePreview(file); setFile(null); setPreview(null); }}>
-            <Text style={styles.remove}>Remove photo</Text>
+          <TouchableOpacity style={styles.removeRow} onPress={() => { releasePreview(file); setFile(null); setPreview(null); }}>
+            <Ionicons name="trash-outline" size={15} color={colors.danger} />
+            <Text style={styles.remove}>{t('Remove photo')}</Text>
           </TouchableOpacity>
         </View>
       ) : canPickImage ? (
-        <Button title="🖼️ Choose a photo" variant="ghost" onPress={choose} />
+        <Button title={t('Choose a photo')} icon="image-outline" variant="ghost" onPress={choose} />
       ) : null}
 
-      <Button title="Publish" onPress={publish} loading={saving} style={{ marginTop: 20 }} />
-      <Button title="Cancel" variant="ghost" onPress={() => router.back()} style={{ marginTop: 10 }} />
+      <Button title={t('Publish')} icon="paper-plane-outline" onPress={publish} loading={saving} style={{ marginTop: 24 }} />
+      <Button title={t('Cancel')} variant="ghost" onPress={() => router.back()} style={{ marginTop: 10 }} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  h1: { fontSize: 22, fontWeight: '800', color: colors.ink },
-  sub: { fontSize: 13.5, color: colors.muted, marginTop: 6, lineHeight: 20 },
-  label: { fontSize: 12.5, fontWeight: '700', color: colors.muted, marginTop: 18, marginBottom: 6 },
-  input: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 12, fontSize: 14, color: colors.ink },
-  preview: { width: '100%', height: 220, borderRadius: radius.md, backgroundColor: colors.card },
-  remove: { color: colors.danger, fontWeight: '700', fontSize: 13, textAlign: 'center', marginTop: 10 },
+  page: { padding: 18, paddingBottom: 40, width: '100%', maxWidth: 640, alignSelf: 'center' },
+  h1: { ...type.h1 },
+  sub: { ...type.small, marginTop: 6, lineHeight: 20 },
+  label: { ...type.label, marginTop: 18, marginBottom: 7 },
+  preview: { width: '100%', height: 220, borderRadius: radius.lg, backgroundColor: colors.line },
+  removeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, paddingVertical: 4 },
+  remove: { color: colors.danger, fontWeight: '700', fontSize: 13 },
 });

@@ -1,14 +1,16 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { notify } from '../../lib/notify';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius } from '../../lib/theme';
-import { Card, Button } from '../../components/ui';
+import { colors, radius, type, shadow } from '../../lib/theme';
+import { Button, Avatar, EmptyState, SectionHeader, Tag } from '../../components/ui';
 import { openDirectChat } from '../../lib/social';
 import { acceptTeamApplication, rejectTeamApplication } from '../../lib/teams';
 import { requireRows } from '../../lib/events';
+import { t } from '../../lib/i18n';
 
 export default function Applicants() {
   const { postId } = useLocalSearchParams();
@@ -21,7 +23,7 @@ export default function Applicants() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { data: p } = await supabase.from('posts').select('title, team_mode, team_min, author_id').eq('id', postId).single();
+    const { data: p } = await supabase.from('posts').select('*').eq('id', postId).single();
     setPost(p);
     // Organizer-only screen. A participant opening the link used to see their
     // own application here — with an Accept button.
@@ -49,97 +51,117 @@ export default function Applicants() {
     // requireRows: a blocked update changes nothing but reports no error.
     const { error } = await requireRows(supabase.from('applications').update({ status }).eq('id', app.id));
     if (error) {
-      notify('Could not update', error.message);
+      notify(t('Could not update'), error.message);
       load();
     }
   }
 
   if (loading) return <ActivityIndicator style={{ marginTop: 60 }} color={colors.brand} />;
-  if (!post) return <Text style={styles.empty}>Event not found.</Text>;
+  if (!post) return <EmptyState icon="calendar-outline" title={t('Event not found.')} />;
   if (post.author_id !== uid) {
     return (
-      <View style={{ padding: 24, alignItems: 'center' }}>
-        <Text style={styles.empty}>Only the organizer of this event can open this page.</Text>
-        <Button title="Open the event" variant="ghost" style={{ marginTop: 14 }} onPress={() => router.replace(`/post/${postId}`)} />
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <EmptyState
+          icon="lock-closed-outline"
+          title={t('Only the organizer of this event can open this page.')}
+          action={t('Open the event')}
+          onAction={() => router.replace(`/post/${postId}`)}
+        />
       </View>
     );
   }
 
+  const total = rows.length + teamApps.length;
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={styles.head}>
-        <Text style={styles.title}>{post?.title ?? 'Applicants'}</Text>
-        <Text style={styles.sub}>
-          {rows.length} individual · {teamApps.length} team application{rows.length + teamApps.length === 1 ? '' : 's'}
-        </Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-          <Button title="👥 Accepted" variant="ghost" style={{ flex: 1 }} onPress={() => router.push(`/accepted/${postId}`)} />
-          <Button title="🏅 Medals" variant="ghost" style={{ flex: 1 }} onPress={() => router.push(`/badge/${postId}`)} />
+        <View style={styles.inner}>
+          <Text style={styles.title}>{post?.title ?? t('Applicants')}</Text>
+          <Text style={styles.sub}>
+            {total === 1
+              ? t('{a} individual · {b} team application', { a: rows.length, b: teamApps.length })
+              : t('{a} individual · {b} team applications', { a: rows.length, b: teamApps.length })}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+            <Button title={t('Accepted')} icon="people-outline" variant="ghost" size="sm" style={{ flex: 1 }} onPress={() => router.push(`/accepted/${postId}`)} />
+            <Button title={t('Medals')} icon="medal-outline" variant="ghost" size="sm" style={{ flex: 1 }} onPress={() => router.push(`/badge/${postId}`)} />
+          </View>
+          <Button title={t('End event and send feedback')} icon="flag-outline" variant="primary" size="sm" style={{ marginTop: 8 }} onPress={() => router.push(`/end/${postId}`)} />
         </View>
-        <Button title="🏁 End event & send feedback" variant="dark" style={{ marginTop: 8 }} onPress={() => router.push(`/end/${postId}`)} />
       </View>
       <FlatList
         data={rows}
         keyExtractor={(r) => r.id}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={styles.list}
         ListHeaderComponent={
           teamApps.length > 0 ? (
             <View>
-              <Text style={styles.section}>🧩 Team applications</Text>
+              <SectionHeader title={t('Team applications')} style={{ marginTop: 4 }} />
               {teamApps.map((ta) => (
                 <TeamAppCard key={ta.id} app={ta} postId={postId} onChanged={load} />
               ))}
-              <Text style={styles.section}>👤 Individual applications</Text>
+              <SectionHeader title={t('Individual applications')} />
             </View>
           ) : null
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            {post?.team_mode === 'team' && teamApps.length === 0
-              ? 'No team applications yet. This event accepts teams only.'
-              : 'No applications yet.'}
-          </Text>
+          <EmptyState
+            icon="people-outline"
+            title={post?.team_mode === 'team' && teamApps.length === 0
+              ? t('No team applications yet. This event accepts teams only.')
+              : t('No applications yet.')}
+          />
         }
         renderItem={({ item }) => {
           const a = item.applicant ?? {};
           return (
-            <Card>
+            <View style={styles.card}>
               <TouchableOpacity style={styles.rowTop} onPress={() => a.id && router.push(`/user/${a.id}`)}>
-                <View style={styles.avatar}><Text style={styles.avatarText}>{(a.full_name ?? '?')[0]}</Text></View>
+                <Avatar name={a.full_name} id={a.id} size={44} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{a.full_name ?? 'Applicant'}</Text>
-                  <Text style={styles.meta}>
-                    {a.university ? `${a.university} · ` : ''}⭐ {a.reliability ?? 75}%
-                    {a.verified_student ? ' · ✔ Verified' : ''} · view profile →
-                  </Text>
+                  <View style={styles.nameRow}>
+                    <Text style={styles.name} numberOfLines={1}>{a.full_name ?? t('Applicant')}</Text>
+                    {a.verified_student ? <Ionicons name="checkmark-circle" size={15} color={colors.brand} accessibilityLabel={t('Verified')} /> : null}
+                  </View>
+                  <View style={styles.metaRow}>
+                    {a.university ? <Text style={styles.meta} numberOfLines={1}>{a.university}</Text> : null}
+                    <Ionicons name="shield-checkmark" size={12} color={colors.brand} />
+                    <Text style={styles.meta}>{a.reliability ?? 75}%</Text>
+                  </View>
                 </View>
                 <StatusPill status={item.status} />
+                <Ionicons name="chevron-forward" size={17} color={colors.faint} />
               </TouchableOpacity>
+
+              <Answers questions={post.questions} answers={item.answers} />
 
               {item.status === 'pending' ? (
                 <View style={styles.actions}>
-                  <Button title="Accept" variant="green" style={styles.actionBtn} onPress={() => decide(item, 'accepted')} />
-                  <Button title="Reject" variant="ghost" style={styles.actionBtn} onPress={() => decide(item, 'rejected')} />
+                  <Button title={t('Accept')} icon="checkmark" variant="primary" size="sm" style={styles.actionBtn} onPress={() => decide(item, 'accepted')} />
+                  <Button title={t('Reject')} variant="ghost" size="sm" style={styles.actionBtn} onPress={() => decide(item, 'rejected')} />
                 </View>
               ) : (
                 <View style={styles.actions}>
                   <Button
-                    title="💬 Message"
+                    title={t('Message')}
+                    icon="chatbubbles-outline"
                     variant="ghost"
+                    size="sm"
                     style={styles.actionBtn}
                     onPress={async () => {
                       try { const cid = await openDirectChat(a.id); router.push(`/chat/${cid}`); }
-                      catch (e) { notify('Could not open chat', e.message); }
+                      catch (e) { notify(t('Could not open chat'), e.message); }
                     }}
                   />
                   {item.status === 'rejected' ? (
-                    <Button title="✅ Accept instead" variant="green" style={styles.actionBtn} onPress={() => decide(item, 'accepted')} />
+                    <Button title={t('Accept instead')} icon="checkmark-circle-outline" variant="primary" size="sm" style={styles.actionBtn} onPress={() => decide(item, 'accepted')} />
                   ) : (
-                    <Button title="↩ Undo accept" variant="ghost" style={styles.actionBtn} onPress={() => decide(item, 'pending')} />
+                    <Button title={t('Undo accept')} icon="arrow-undo-outline" variant="ghost" size="sm" style={styles.actionBtn} onPress={() => decide(item, 'pending')} />
                   )}
                 </View>
               )}
-            </Card>
+            </View>
           );
         }}
       />
@@ -165,41 +187,51 @@ function TeamAppCard({ app, postId, onChanged }) {
     setBusy(true);
     const { error } = accept ? await acceptTeamApplication(app.id) : await rejectTeamApplication(app.id);
     setBusy(false);
-    if (error) notify('Could not update', error.message);
+    if (error) notify(t('Could not update'), error.message);
     else {
-      notify(accept ? 'Team accepted ✅' : 'Team rejected',
-        accept ? 'Every member is now an accepted participant and can use the event chat.' : '');
+      notify(accept ? t('Team accepted') : t('Team rejected'),
+        accept ? t('Every member is now an accepted participant and can use the event chat.') : '');
       onChanged();
     }
   }
 
   return (
-    <Card>
+    <View style={styles.card}>
       <View style={styles.rowTop}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>🧩</Text></View>
+        <View style={styles.teamIcon}><Ionicons name="people-outline" size={22} color={colors.brand} /></View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.name}>{app.team?.name ?? 'Team'}</Text>
-          <Text style={styles.meta}>{app.team?.competition ?? 'Team application'}</Text>
+          <Text style={styles.name} numberOfLines={1}>{app.team?.name ?? t('Team')}</Text>
+          <Text style={styles.meta} numberOfLines={1}>{app.team?.competition ?? t('Team application')}</Text>
         </View>
         <StatusPill status={app.status} />
       </View>
       {app.message ? <Text style={styles.teamMsg}>“{app.message}”</Text> : null}
 
-      <TouchableOpacity onPress={toggle} style={{ marginTop: 10 }}>
-        <Text style={styles.linkish}>{open ? '▾ Hide members' : '▸ See members & profiles'}</Text>
+      <TouchableOpacity onPress={toggle} style={styles.toggle}>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={15} color={colors.brand} />
+        <Text style={styles.linkish}>{open ? t('Hide members') : t('See members and profiles')}</Text>
       </TouchableOpacity>
       {open && (
         <View style={{ marginTop: 8 }}>
           {members.length === 0 ? (
-            <Text style={styles.meta}>No accepted members in this team yet.</Text>
+            <Text style={styles.meta}>{t('No accepted members in this team yet.')}</Text>
           ) : members.map((m) => (
             <TouchableOpacity key={m.id} style={styles.memberRow} onPress={() => router.push(`/user/${m.id}`)}>
-              <View style={styles.avatarSm}><Text style={styles.avatarSmText}>{(m.full_name ?? '?')[0]}</Text></View>
+              <Avatar name={m.full_name} id={m.id} size={34} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.memberName}>{m.full_name}{m.verified_student ? ' ✔' : ''}</Text>
-                <Text style={styles.meta}>{m.university ?? ''}{m.major ? ` · ${m.major}` : ''} · ⭐ {m.reliability ?? 75}%</Text>
+                <View style={styles.nameRow}>
+                  <Text style={styles.memberName} numberOfLines={1}>{m.full_name}</Text>
+                  {m.verified_student ? <Ionicons name="checkmark-circle" size={14} color={colors.brand} accessibilityLabel={t('Verified')} /> : null}
+                </View>
+                <View style={styles.metaRow}>
+                  {m.university || m.major ? (
+                    <Text style={styles.meta} numberOfLines={1}>{[m.university, m.major].filter(Boolean).join(' · ')}</Text>
+                  ) : null}
+                  <Ionicons name="shield-checkmark" size={12} color={colors.brand} />
+                  <Text style={styles.meta}>{m.reliability ?? 75}%</Text>
+                </View>
               </View>
-              <Text style={styles.linkish}>View →</Text>
+              <Ionicons name="chevron-forward" size={17} color={colors.faint} accessibilityLabel={t('View')} />
             </TouchableOpacity>
           ))}
         </View>
@@ -207,44 +239,68 @@ function TeamAppCard({ app, postId, onChanged }) {
 
       {app.status === 'pending' ? (
         <View style={styles.actions}>
-          <Button title="Accept team" variant="green" style={styles.actionBtn} loading={busy} onPress={() => decide(true)} />
-          <Button title="Reject" variant="ghost" style={styles.actionBtn} onPress={() => decide(false)} />
+          <Button title={t('Accept team')} icon="checkmark" variant="primary" size="sm" style={styles.actionBtn} loading={busy} onPress={() => decide(true)} />
+          <Button title={t('Reject')} variant="ghost" size="sm" style={styles.actionBtn} onPress={() => decide(false)} />
         </View>
       ) : app.status === 'rejected' ? (
-        <Button title="✅ Accept instead" variant="green" style={{ marginTop: 10 }} loading={busy} onPress={() => decide(true)} />
+        <Button title={t('Accept instead')} icon="checkmark-circle-outline" variant="primary" size="sm" style={{ marginTop: 12 }} loading={busy} onPress={() => decide(true)} />
       ) : null}
-    </Card>
+    </View>
   );
 }
 
 function StatusPill({ status }) {
   const map = {
-    pending: { t: '🟡 Pending', c: colors.warn, b: colors.warnSoft },
-    accepted: { t: '🟢 Accepted', c: colors.accent, b: colors.accentSoft },
-    rejected: { t: '🔴 Rejected', c: colors.danger, b: '#fdecec' },
+    pending: { label: t('Pending'), icon: 'time-outline', c: colors.warn, b: colors.warnSoft },
+    accepted: { label: t('Accepted'), icon: 'checkmark-circle', c: colors.accent, b: colors.accentSoft },
+    rejected: { label: t('Rejected'), icon: 'close-circle', c: colors.danger, b: colors.dangerSoft },
   };
   const s = map[status] ?? map.pending;
-  return <Text style={[styles.pill, { color: s.c, backgroundColor: s.b }]}>{s.t}</Text>;
+  return <Tag label={s.label} icon={s.icon} color={s.c} soft={s.b} />;
+}
+
+// The applicant's answers to the organizer's questions (supabase/29).
+function Answers({ questions, answers }) {
+  const qs = Array.isArray(questions) ? questions : [];
+  const as = Array.isArray(answers) ? answers : [];
+  const pairs = qs.map((q, i) => ({ q: q?.q, a: as[i] })).filter((p) => p.q && p.a);
+  if (!pairs.length) return null;
+  return (
+    <View style={styles.answers}>
+      {pairs.map((p, i) => (
+        <View key={i} style={i ? { marginTop: 10 } : null}>
+          <Text style={styles.answerQ}>{p.q}</Text>
+          <Text style={styles.answerA}>{p.a}</Text>
+        </View>
+      ))}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  head: { backgroundColor: colors.card, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
-  title: { fontSize: 18, fontWeight: '800', color: colors.ink },
-  sub: { fontSize: 13, color: colors.muted, marginTop: 2 },
+  answers: { backgroundColor: colors.bg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: 12, marginTop: 12 },
+  answerQ: { ...type.caption },
+  answerA: { fontSize: 14, color: colors.ink, marginTop: 3, lineHeight: 20 },
+  head: { backgroundColor: colors.card, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  inner: { width: '100%', maxWidth: 680, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  title: { ...type.h2 },
+  sub: { ...type.small, marginTop: 2 },
+  card: {
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg,
+    padding: 14, marginBottom: 12, ...shadow.sm,
+  },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.brand, fontWeight: '800', fontSize: 18 },
-  name: { fontSize: 15.5, fontWeight: '700', color: colors.ink },
-  meta: { fontSize: 12.5, color: colors.muted, marginTop: 2 },
-  pill: { fontSize: 11, fontWeight: '700', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, overflow: 'hidden' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, flexWrap: 'wrap' },
+  teamIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
+  name: { ...type.title, fontSize: 15.5, flexShrink: 1 },
+  meta: { fontSize: 12.5, color: colors.muted, marginTop: 2, flexShrink: 1 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   actionBtn: { flex: 1 },
-  empty: { textAlign: 'center', color: colors.muted, marginTop: 40, paddingHorizontal: 20, lineHeight: 21 },
-  section: { fontSize: 14, fontWeight: '800', color: colors.ink, marginBottom: 10, marginTop: 4 },
-  teamMsg: { fontSize: 13, color: colors.ink, fontStyle: 'italic', marginTop: 10, lineHeight: 19 },
-  linkish: { fontSize: 12.5, color: colors.brand, fontWeight: '700' },
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.line },
-  avatarSm: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
-  avatarSmText: { color: colors.brand, fontWeight: '800', fontSize: 14 },
-  memberName: { fontSize: 14, fontWeight: '700', color: colors.ink },
+  teamMsg: { fontSize: 13.5, color: colors.body, fontStyle: 'italic', marginTop: 10, lineHeight: 19 },
+  toggle: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10, alignSelf: 'flex-start' },
+  linkish: { fontSize: 13, color: colors.brand, fontWeight: '700' },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, borderTopWidth: 1, borderTopColor: colors.line },
+  memberName: { fontSize: 14, fontWeight: '700', color: colors.ink, flexShrink: 1 },
 });

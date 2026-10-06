@@ -2,15 +2,35 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Animated, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useRouter, usePathname, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { colors, radius } from '../lib/theme';
-import { ICONS } from '../lib/notifications';
+import { t } from '../lib/i18n';
 import { ping, buzz, notificationState } from '../lib/feedback';
 import { openLink, notificationLink } from '../lib/links';
 import { setPushRouter, onPushForeground } from '../lib/push';
 
 const isWeb = Platform.OS === 'web';
+
+// Ionicons per notification type (lib/notifications' ICONS holds emoji).
+const TYPE_ICONS = {
+  message: 'chatbubbles-outline',
+  friend_request: 'person-add-outline',
+  friend_accepted: 'people-outline',
+  new_application: 'document-text-outline',
+  accepted: 'checkmark-circle',
+  rejected: 'close-circle-outline',
+  team_invite: 'people-outline',
+  team_request: 'people-outline',
+  team_joined: 'people-outline',
+  team_approved: 'checkmark-circle',
+  team_rejected: 'close-circle-outline',
+  team_application: 'people-outline',
+  team_accepted: 'checkmark-circle',
+  award: 'medal-outline',
+  reminder: 'alarm-outline',
+};
 
 // Natively the same notification can reach us twice — the realtime row and,
 // a moment later, the OneSignal push (shown here instead of a system banner).
@@ -55,7 +75,7 @@ export default function NotificationToast() {
     if (!isWeb) {
       const key = `${n.title ?? ''}\n${n.body ?? ''}`;
       const now = Date.now();
-      for (const [k, t] of recent.current) if (now - t > DEDUPE_MS) recent.current.delete(k);
+      for (const [k, at] of recent.current) if (now - at > DEDUPE_MS) recent.current.delete(k);
       if (recent.current.has(key)) return;
       recent.current.set(key, now);
     }
@@ -120,13 +140,19 @@ export default function NotificationToast() {
         style={styles.card}
         onPress={() => { const l = notificationLink(item); hide(); openLink(router, l, segments); }}
       >
-        <Text style={styles.icon}>{ICONS[item.type] ?? '🔔'}</Text>
+        <Ionicons name={TYPE_ICONS[item.type] ?? 'notifications-outline'} size={20} color={colors.bg} />
         <Text style={styles.text} numberOfLines={2}>
           <Text style={styles.title}>{item.title}</Text>
           {item.body ? `\n${item.body}` : ''}
         </Text>
-        <TouchableOpacity onPress={(e) => { e?.stopPropagation?.(); hide(); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.close}>✕</Text>
+        <TouchableOpacity
+          onPress={(e) => { e?.stopPropagation?.(); hide(); }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel={t('Dismiss')}
+          style={styles.close}
+        >
+          <Ionicons name="close" size={18} color={colors.faint} />
         </TouchableOpacity>
       </TouchableOpacity>
     </Animated.View>
@@ -141,8 +167,9 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8,
     maxWidth: 560, alignSelf: 'center', width: '100%',
   },
-  icon: { fontSize: 20 },
-  text: { flex: 1, color: 'rgba(255,255,255,0.85)', fontSize: 12.5, lineHeight: 17 },
-  title: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  close: { color: 'rgba(255,255,255,0.6)', fontSize: 15, fontWeight: '700', paddingLeft: 4 },
+  // The card is ink-coloured (dark in light mode, light in dark mode), so its
+  // text uses the page background colour family to stay readable in both.
+  text: { flex: 1, color: colors.line, fontSize: 12.5, lineHeight: 17 },
+  title: { color: colors.bg, fontWeight: '800', fontSize: 14 },
+  close: { paddingLeft: 4 },
 });

@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, AppState } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, AppState, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter, useSegments } from 'expo-router';
-import { colors, radius } from '../lib/theme';
+import { colors, radius, type } from '../lib/theme';
 import {
   isInstalled, isIOS, notificationState, notificationHelp, unlockAudio, ping, buzz,
   inAppBrowser, inAppGuidance, leaveInAppBrowser,
@@ -12,6 +13,7 @@ import { notify } from '../lib/notify';
 import { useAuth } from '../lib/auth';
 import { telegramStatus } from '../lib/telegram';
 import { openLink } from '../lib/links';
+import { t } from '../lib/i18n';
 
 const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
 const NO_TELEGRAM = { available: false, linked: false };
@@ -93,34 +95,41 @@ function WebNudge() {
   }
 
   const iosNeedsInstall = !inApp && perm === 'unsupported' && isIOS() && !isInstalled();
-  const orTelegram = ', or connect Telegram in Profile';
+  const browser = inApp ? inAppGuidance(inApp).browser : '';
+  const where = inApp === 'app' ? null : inApp;
 
+  // One whole sentence per case, so each translates on its own.
   const label = viaTelegram
     ? (inApp
-      ? `Notifications don’t work in ${inApp === 'app' ? 'this in-app browser' : `${inApp}’s browser`} — open Tadbirly in ${inAppGuidance(inApp).browser}${orTelegram}`
+      ? (where
+        ? t('Notifications don’t work in {app}’s browser. Open Tadbirly in {browser}, or connect Telegram in Profile', { app: where, browser })
+        : t('Notifications don’t work in this in-app browser. Open Tadbirly in {browser}, or connect Telegram in Profile', { browser }))
       : perm === 'denied'
-        ? `Notifications are off — switch them back on${orTelegram}`
+        ? t('Notifications are off. Switch them back on, or connect Telegram in Profile')
         : iosNeedsInstall
-          ? `Add Tadbirly to your Home Screen to get notified${orTelegram}`
-          : 'This browser can’t send notifications — connect Telegram in Profile instead')
+          ? t('Add Tadbirly to your Home Screen to get notified, or connect Telegram in Profile')
+          : t('This browser can’t send notifications. Connect Telegram in Profile instead'))
     : inApp
-      ? `Notifications don’t work in ${inApp === 'app' ? 'this in-app browser' : `${inApp}’s browser`} — open Tadbirly in ${inAppGuidance(inApp).browser}`
+      ? (where
+        ? t('Notifications don’t work in {app}’s browser. Open Tadbirly in {browser}', { app: where, browser })
+        : t('Notifications don’t work in this in-app browser. Open Tadbirly in {browser}', { browser }))
       : perm === 'denied'
-        ? 'Notifications are off — here’s how to switch them back on'
+        ? t('Notifications are off. Here’s how to switch them back on')
         : iosNeedsInstall
-          ? 'Add Tadbirly to your Home Screen to get notified'
+          ? t('Add Tadbirly to your Home Screen to get notified')
           : perm === 'unsupported'
-            ? 'This browser can’t send notifications — here’s what to do'
-            : 'Turn on notifications so you don’t miss acceptances and invites';
+            ? t('This browser can’t send notifications. Here’s what to do')
+            : t('Turn on notifications so you don’t miss acceptances and invites');
 
-  const cta = busy ? '…' : viaTelegram ? 'Set up' : inApp ? 'Open' : help ? 'How' : 'Turn on';
+  const cta = viaTelegram ? t('Set up') : inApp ? t('Open') : help ? t('How') : t('Turn on');
+  const icon = inApp ? 'globe-outline' : perm === 'denied' ? 'notifications-off-outline' : 'notifications-outline';
 
   return (
-    <TouchableOpacity style={styles.wrap} onPress={onPress} activeOpacity={0.85} disabled={busy}>
-      <Text style={styles.bell}>{inApp ? '🌐' : perm === 'denied' ? '🔕' : '🔔'}</Text>
+    <TouchableOpacity style={styles.wrap} onPress={onPress} activeOpacity={0.85} disabled={busy} accessibilityRole="button">
+      <View style={styles.iconDot}><Ionicons name={icon} size={17} color={colors.brand} /></View>
       <Text style={styles.text}>{label}</Text>
       <View style={styles.cta}>
-        <Text style={styles.ctaText}>{cta}</Text>
+        {busy ? <ActivityIndicator size="small" color={colors.onBrand} /> : <Text style={styles.ctaText}>{cta}</Text>}
       </View>
     </TouchableOpacity>
   );
@@ -199,18 +208,18 @@ function NativeNudge() {
   if (!denied && !cardDismissed) {
     return (
       <View style={styles.card}>
-        <Text style={styles.cardEmoji}>🔔</Text>
+        <View style={styles.cardIcon}><Ionicons name="notifications-outline" size={22} color={colors.brand} /></View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>Turn on notifications</Text>
+          <Text style={styles.cardTitle}>{t('Turn on notifications')}</Text>
           <Text style={styles.cardBody}>
-            Know the moment you’re accepted to an event, invited to a team, given points or sent a message.
+            {t('Know the moment you’re accepted to an event, invited to a team, given points or sent a message.')}
           </Text>
           <View style={styles.cardRow}>
-            <TouchableOpacity style={styles.cta} onPress={turnOn} disabled={busy} activeOpacity={0.85}>
-              <Text style={styles.ctaText}>{busy ? '…' : 'Turn on'}</Text>
+            <TouchableOpacity style={styles.cta} onPress={turnOn} disabled={busy} activeOpacity={0.85} accessibilityRole="button">
+              {busy ? <ActivityIndicator size="small" color={colors.onBrand} /> : <Text style={styles.ctaText}>{t('Turn on')}</Text>}
             </TouchableOpacity>
-            <TouchableOpacity onPress={notNow} disabled={busy} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.notNow}>Not now</Text>
+            <TouchableOpacity onPress={notNow} disabled={busy} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button">
+              <Text style={styles.notNow}>{t('Not now')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -219,12 +228,16 @@ function NativeNudge() {
   }
 
   const label = denied
-    ? `Notifications are off for Tadbirly — switch them on in Settings${tg.available ? ', or connect Telegram in Profile' : ''}`
-    : 'Turn on notifications so you don’t miss acceptances and invites';
+    ? (tg.available
+      ? t('Notifications are off for Tadbirly. Switch them on in Settings, or connect Telegram in Profile')
+      : t('Notifications are off for Tadbirly. Switch them on in Settings'))
+    : t('Turn on notifications so you don’t miss acceptances and invites');
 
   return (
-    <TouchableOpacity style={styles.wrap} onPress={turnOn} activeOpacity={0.85} disabled={busy}>
-      <Text style={styles.bell}>{denied ? '🔕' : '🔔'}</Text>
+    <TouchableOpacity style={styles.wrap} onPress={turnOn} activeOpacity={0.85} disabled={busy} accessibilityRole="button">
+      <View style={styles.iconDot}>
+        <Ionicons name={denied ? 'notifications-off-outline' : 'notifications-outline'} size={17} color={colors.brand} />
+      </View>
       <Text style={styles.text}>{label}</Text>
       {denied && tg.available ? (
         <TouchableOpacity
@@ -235,7 +248,7 @@ function NativeNudge() {
         </TouchableOpacity>
       ) : null}
       <View style={styles.cta}>
-        <Text style={styles.ctaText}>{busy ? '…' : denied ? 'Settings' : 'Turn on'}</Text>
+        {busy ? <ActivityIndicator size="small" color={colors.onBrand} /> : <Text style={styles.ctaText}>{denied ? t('Settings') : t('Turn on')}</Text>}
       </View>
     </TouchableOpacity>
   );
@@ -245,23 +258,21 @@ const styles = StyleSheet.create({
   wrap: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: colors.brandSoft, borderRadius: radius.md,
-    paddingVertical: 11, paddingHorizontal: 13, marginBottom: 14,
-    borderWidth: 1, borderColor: 'rgba(45,90,61,0.22)',
+    paddingVertical: 10, paddingHorizontal: 12, marginBottom: 14,
   },
-  bell: { fontSize: 18 },
-  text: { flex: 1, fontSize: 12.5, fontWeight: '700', color: colors.brand, lineHeight: 17 },
-  cta: { backgroundColor: colors.brand, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 13 },
-  ctaText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  iconDot: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
+  text: { flex: 1, fontSize: 12.5, fontWeight: '600', color: colors.ink, lineHeight: 17 },
+  cta: { backgroundColor: colors.brand, borderRadius: radius.pill, paddingVertical: 6, paddingHorizontal: 13, minWidth: 44, alignItems: 'center' },
+  ctaText: { color: colors.onBrand, fontWeight: '700', fontSize: 12 },
   ctaGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.brand, paddingVertical: 5, paddingHorizontal: 10 },
   card: {
     flexDirection: 'row', gap: 12,
     backgroundColor: colors.brandSoft, borderRadius: radius.lg,
     paddingVertical: 14, paddingHorizontal: 14, marginBottom: 14,
-    borderWidth: 1, borderColor: 'rgba(45,90,61,0.22)',
   },
-  cardEmoji: { fontSize: 26 },
-  cardTitle: { fontSize: 15, fontWeight: '800', color: colors.brand },
-  cardBody: { fontSize: 12.5, color: colors.brand, opacity: 0.85, marginTop: 3, lineHeight: 17 },
+  cardIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
+  cardTitle: { ...type.title, fontSize: 15 },
+  cardBody: { fontSize: 12.5, color: colors.body, marginTop: 3, lineHeight: 17 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 11 },
-  notNow: { fontSize: 12.5, fontWeight: '700', color: colors.brand, opacity: 0.7 },
+  notNow: { fontSize: 12.5, fontWeight: '700', color: colors.muted },
 });

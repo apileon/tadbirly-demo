@@ -1,101 +1,104 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { Button, Logo } from '../../components/ui';
-import { colors, radius } from '../../lib/theme';
+import { Button, Logo, Wordmark, TextField } from '../../components/ui';
+import { colors, radius, type, shadow } from '../../lib/theme';
+import { t } from '../../lib/i18n';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
 
   async function signIn() {
     setErr('');
-    if (!email.trim() || !password) { setErr('Enter your email and password.'); return; }
+    if (!email.trim() || !password) { setErr(t('Enter your email and password.')); return; }
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setLoading(false);
-    if (error) setErr(error.message);
+    if (error) setErr(t(error.message));
   }
 
   return (
     <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.brandBlock}>
-        <Logo size={72} style={{ marginBottom: 16 }} />
-        <Text style={styles.logo}>Tadbir<Text style={{ color: colors.brand }}>ly</Text></Text>
-        <Text style={styles.tag}>The next move is yours.</Text>
-      </View>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <View style={styles.column}>
+          <View style={styles.brandBlock}>
+            <Logo size={64} style={{ marginBottom: 18 }} />
+            <Wordmark size={30} />
+            <Text style={styles.tag}>{t('Every opportunity in Uzbekistan, one tap away.')}</Text>
+          </View>
 
-      <Text style={styles.label}>Email</Text>
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        placeholder="you@example.com"
-        placeholderTextColor={colors.muted}
-        value={email}
-        onChangeText={setEmail}
-      />
-      <Text style={styles.label}>Password</Text>
-      <View style={styles.pwWrap}>
-        <TextInput
-          style={styles.pwInput}
-          secureTextEntry={!showPw}
-          placeholder="••••••••"
-          placeholderTextColor={colors.muted}
-          value={password}
-          onChangeText={setPassword}
-          onSubmitEditing={signIn}
-        />
-        <TouchableOpacity
-          onPress={() => setShowPw((v) => !v)}
-          style={styles.eye}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={21} color={colors.muted} />
-        </TouchableOpacity>
-      </View>
+          <View style={styles.panel}>
+            <Text style={type.h2}>{t('Welcome back')}</Text>
+            <Text style={[type.small, { marginTop: 4 }]}>{t('Log in to see what\'s on this week.')}</Text>
 
-      {/* Without this, a forgotten password meant being locked out for good. */}
-      <View style={styles.forgotRow}>
-        <Link href="/(auth)/reset" style={styles.forgot}>Forgot password?</Link>
-      </View>
+            <TextField
+              label={t('Email')}
+              icon="mail-outline"
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              placeholder={t('you@example.com')}
+              value={email}
+              onChangeText={setEmail}
+              style={{ marginTop: 20 }}
+            />
+            <TextField
+              label={t('Password')}
+              icon="lock-closed-outline"
+              secure
+              autoComplete="current-password"
+              placeholder={t('Your password')}
+              value={password}
+              onChangeText={setPassword}
+              onSubmitEditing={signIn}
+            />
 
-      {err ? <Text style={styles.err}>{err}</Text> : null}
+            {/* Without this, a forgotten password meant being locked out for good. */}
+            <View style={styles.forgotRow}>
+              <Link href="/(auth)/reset" style={styles.link}>{t('Forgot password?')}</Link>
+            </View>
 
-      <Button title="Log in" onPress={signIn} loading={loading} style={{ marginTop: 16 }} />
+            {err ? (
+              <View style={styles.err}>
+                <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                <Text style={styles.errText}>{err}</Text>
+              </View>
+            ) : null}
 
-      <Text style={[styles.foot, { marginTop: 18 }]}>
-        New here?{' '}
-        <Link href="/(auth)/signup" style={styles.link}>Create an account</Link>
-      </Text>
+            <Button title={t('Log in')} onPress={signIn} loading={loading} style={{ marginTop: 18 }} />
+          </View>
+
+          <Text style={styles.foot}>
+            {t('New to Tadbirly?')}{' '}
+            <Link href="/(auth)/signup" style={styles.link}>{t('Create an account')}</Link>
+          </Text>
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: colors.bg, padding: 24, justifyContent: 'center' },
-  brandBlock: { alignItems: 'center', marginBottom: 36 },
-  logo: { fontSize: 34, fontWeight: '800', color: colors.ink, letterSpacing: -0.5 },
-  tag: { fontSize: 14, color: colors.muted, marginTop: 8, textAlign: 'center' },
-  label: { fontSize: 12.5, fontWeight: '700', color: colors.muted, marginTop: 14, marginBottom: 6 },
-  input: {
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line,
-    borderRadius: radius.md, padding: 13, fontSize: 15, color: colors.ink,
+  wrap: { flex: 1, backgroundColor: colors.bg },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20, paddingVertical: 40 },
+  column: { width: '100%', maxWidth: 420, alignSelf: 'center' },
+  brandBlock: { alignItems: 'center', marginBottom: 28 },
+  tag: { ...type.small, fontSize: 14, marginTop: 8, textAlign: 'center' },
+  panel: {
+    backgroundColor: colors.card, borderRadius: radius.xl, padding: 22,
+    borderWidth: 1, borderColor: colors.line, ...shadow.md,
   },
-  pwWrap: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
+  forgotRow: { alignItems: 'flex-end', marginTop: 12 },
+  link: { color: colors.brand, fontWeight: '700', fontSize: 14 },
+  err: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14,
+    backgroundColor: colors.dangerSoft, borderRadius: radius.sm, paddingVertical: 10, paddingHorizontal: 12,
   },
-  pwInput: { flex: 1, padding: 13, fontSize: 15, color: colors.ink },
-  eye: { paddingHorizontal: 14, paddingVertical: 12 },
-  forgotRow: { alignItems: 'flex-end', marginTop: 10 },
-  forgot: { color: colors.brand, fontWeight: '700', fontSize: 13 },
+  errText: { color: colors.danger, fontSize: 13.5, flex: 1 },
   foot: { textAlign: 'center', marginTop: 22, color: colors.muted, fontSize: 14 },
-  link: { color: colors.brand, fontWeight: '700' },
-  err: { color: colors.danger, fontSize: 13.5, marginTop: 14, textAlign: 'center' },
 });

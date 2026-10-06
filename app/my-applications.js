@@ -1,10 +1,15 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
-import { colors, CATEGORIES } from '../lib/theme';
-import { Card } from '../components/ui';
+import { colors, radius, type, shadow, CATEGORIES } from '../lib/theme';
+import { EmptyState, Tag } from '../components/ui';
+import { t } from '../lib/i18n';
+
+// The post is fetched without its category, so the icon follows the coarse kind.
+const KIND_ICONS = { event: 'calendar-outline', internship: 'briefcase-outline', mun: 'globe-outline' };
 
 export default function MyApplications() {
   const { session } = useAuth();
@@ -24,49 +29,58 @@ export default function MyApplications() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View style={styles.legend}>
-        <Text style={styles.legendText}>🟡 Pending · 🟢 Accepted · 🔴 Not selected</Text>
-      </View>
-      <FlatList
-        data={rows}
-        keyExtractor={(r) => r.id}
-        contentContainerStyle={{ padding: 16 }}
-        ListEmptyComponent={<Text style={styles.empty}>Nothing yet — apply to something from the feed and it appears here.</Text>}
-        renderItem={({ item }) => {
-          const p = item.post ?? {};
-          const cat = CATEGORIES[p.kind] ?? CATEGORIES.event;
-          return (
-            <Card onPress={() => p.id && router.push(`/post/${p.id}`)}>
-              <View style={styles.rowTop}>
-                <Text style={styles.title}>{cat.emoji} {p.title ?? 'Post'}</Text>
+    <FlatList
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      data={rows}
+      keyExtractor={(r) => r.id}
+      contentContainerStyle={styles.list}
+      ListEmptyComponent={
+        <EmptyState
+          icon="document-text-outline"
+          title={t('No applications yet')}
+          text={t('Apply to something from the feed and it appears here.')}
+        />
+      }
+      renderItem={({ item }) => {
+        const p = item.post ?? {};
+        const cat = CATEGORIES[p.kind] ?? CATEGORIES.event;
+        const where = p.location ?? p.city;
+        return (
+          <TouchableOpacity activeOpacity={0.9} style={styles.card} onPress={() => p.id && router.push(`/post/${p.id}`)}>
+            <View style={[styles.typeIcon, { backgroundColor: cat.soft }]}>
+              <Ionicons name={KIND_ICONS[p.kind] ?? KIND_ICONS.event} size={18} color={cat.color} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title} numberOfLines={2}>{p.title ?? t('Post')}</Text>
+              {where || p.event_date ? (
+                <Text style={styles.meta} numberOfLines={1}>{where}{p.event_date ? `${where ? ' · ' : ''}${p.event_date}` : ''}</Text>
+              ) : null}
+              <View style={{ marginTop: 8 }}>
                 <StatusPill status={item.status} />
               </View>
-              <Text style={styles.meta}>{p.location ?? p.city}{p.event_date ? ` · ${p.event_date}` : ''}</Text>
-            </Card>
-          );
-        }}
-      />
-    </View>
+            </View>
+            <Ionicons name="chevron-forward" size={17} color={colors.faint} style={{ alignSelf: 'center' }} />
+          </TouchableOpacity>
+        );
+      }}
+    />
   );
 }
 
 function StatusPill({ status }) {
   const map = {
-    pending: { t: '🟡 Pending', c: colors.warn, b: colors.warnSoft },
-    accepted: { t: '🟢 Accepted', c: colors.accent, b: colors.accentSoft },
-    rejected: { t: '🔴 Not selected', c: colors.danger, b: '#fdecec' },
+    pending: { label: t('Pending'), icon: 'time-outline', c: colors.warn, b: colors.warnSoft },
+    accepted: { label: t('Accepted'), icon: 'checkmark-circle', c: colors.accent, b: colors.accentSoft },
+    rejected: { label: t('Not selected'), icon: 'close-circle-outline', c: colors.danger, b: colors.dangerSoft },
   };
   const s = map[status] ?? map.pending;
-  return <Text style={[styles.pill, { color: s.c, backgroundColor: s.b }]}>{s.t}</Text>;
+  return <Tag label={s.label} icon={s.icon} color={s.c} soft={s.b} />;
 }
 
 const styles = StyleSheet.create({
-  legend: { backgroundColor: colors.card, padding: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
-  legendText: { fontSize: 12, color: colors.muted, textAlign: 'center' },
-  rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  title: { fontSize: 15, fontWeight: '700', color: colors.ink, flex: 1 },
-  meta: { fontSize: 12.5, color: colors.muted, marginTop: 6 },
-  pill: { fontSize: 11, fontWeight: '700', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, overflow: 'hidden' },
-  empty: { textAlign: 'center', color: colors.muted, marginTop: 40, paddingHorizontal: 20, lineHeight: 21 },
+  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  card: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 14, marginBottom: 12, ...shadow.sm },
+  typeIcon: { width: 38, height: 38, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  title: { ...type.title, fontSize: 15 },
+  meta: { fontSize: 12.5, color: colors.muted, marginTop: 3 },
 });

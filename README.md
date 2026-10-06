@@ -1,99 +1,109 @@
-# Tadbirly — MVP (React Native + Expo + Supabase)
+# Tadbirly (React Native + Expo + Supabase)
 
-Every opportunity in Uzbekistan — one tap away. This is the real, runnable MVP: one
-codebase that builds to **iOS and Android**, backed by a live database with accounts,
-posts, applications, realtime chat, venues, a Pro plan and an AI coach.
-
----
-
-## What works today
-
-| Feature | Status |
-|---|---|
-| Email/password accounts (auto-created profile) | ✅ real |
-| Feed with category tabs (Events / Requests / Internships / MUN) + search | ✅ real, from DB |
-| Create post (event or request) with free-plan cap of 3 events/month | ✅ real |
-| Post detail + Apply (opens a chat with the organizer) | ✅ real |
-| Realtime 1:1 chat | ✅ real (Supabase Realtime) |
-| Profile with reliability score + live application/post counts | ✅ real |
-| Venues list + booking request | ✅ real (map view is a placeholder) |
-| Pro paywall (flips `is_pro`) | ⚠️ payment stubbed — see below |
-| AI Career Coach | ⚠️ rule-based heuristic — swap for an LLM call |
+Every opportunity in Uzbekistan, one tap away. One codebase that runs on the **web**
+(tadbirly.expo.app), **Android** and **iOS**, backed by Supabase: accounts, events,
+applications, realtime chat, teams, rankings and an AI career coach.
 
 ---
 
-## 1. Run it locally (5 minutes)
+## Features
+
+**Students**
+- Feed with **For you** (ranked by interests, skills and city) and **Upcoming** views,
+  search, and filters for category, city, language, free, online and closing soon.
+- **Saved events** with reminders the day before an application deadline or event.
+- **Add to calendar** (Google Calendar; .ics for Apple/Outlook on the web), **share** via
+  the phone's share sheet or straight to **Telegram**.
+- Apply, including the organizer's **custom questions**; teams apply together.
+- **QR ticket** once accepted; **rate and review** events afterwards.
+- Student Passport, medals, points ranking, friends, 1:1 and event chats, news.
+- **Team Builder** with skills each team needs, matched against your Passport skills.
+- **AI Career Coach** (Claude, via the `career-coach` edge function).
+- Onboarding (language, interests, city), **English / O'zbekcha / Русский**, **dark mode**.
+
+**Organizers**
+- Post and edit events: cover, category, solo/team, city or online, **map pin**
+  (address search, OpenStreetMap), date, time, **application deadline**, language,
+  free or paid, application questions.
+- Review applicants (with their answers), accept, chat, award medals, end events.
+- **Scan QR tickets** at the door (or tick people off a list).
+- **Event stats**: views, applications, accepted, checked in, saves, ratings.
+- Public organizer page with rating, totals and open events.
+
+**Safety**: report / block on events, teams, profiles, posts, comments and messages;
+account deletion; reports push an alert to admins (`profiles.is_admin`).
+
+---
+
+## 1. Run it locally
 
 ```bash
-cd "tadbirly-app"
-npm install            # or: npx expo install  (recommended — pins RN-compatible versions)
+npm install
 npx expo start
 ```
 
-Scan the QR code with the **Expo Go** app (App Store / Play Store) on your phone. The app
-loads instantly — no build needed while developing.
+Press `w` for the web version, or scan the QR code with a development build.
 
-## 2. Connect the backend (Supabase — free)
+## 2. Database (Supabase)
 
-1. Create a project at https://supabase.com.
-2. Open **SQL Editor** → paste `supabase/schema.sql` → **Run**. (Creates tables + security.)
-   Then paste `supabase/02_moderation.sql` → **Run** (reports, blocks, account deletion support).
-3. (Optional) After you sign up your first user, run `supabase/seed.sql` for demo posts.
-   For in-app account deletion, deploy the edge function:
-   `supabase functions deploy delete-account --no-verify-jwt`
-4. In **Project Settings → API**, copy the **Project URL** and **anon public key**.
-5. Paste them into `app.json` → `expo.extra.supabaseUrl` and `expo.extra.supabaseAnonKey`.
-6. In **Database → Replication**, make sure Realtime is on for the `messages` table.
-7. Restart `npx expo start`.
+Run the SQL files in `supabase/` **in number order** in the SQL Editor (each is safe to
+re-run): `schema.sql`, then `02_…` through `29_growth.sql`. `29_growth.sql` adds saved
+events, deadline reminders, interests/onboarding, event language/price/online/map/questions,
+views and organizer stats, reviews, QR check-in codes and team skills. The app keeps
+working without it; those features simply stay hidden until it's installed.
 
-That's it — sign up, post, apply, chat.
+Reminders run on **pg_cron** (25 and 29 schedule themselves; enable the Cron integration
+if the result row says "NOT scheduled").
 
-## 3. Ship to the App Store & Google Play
+Edge functions (Dashboard → Edge Functions, or `supabase functions deploy <name>`):
+- `career-coach`: needs `28_coach.sql` and the secret `ANTHROPIC_API_KEY`
+  (optional: `COACH_MODEL`, `COACH_DAILY_CAP`, `COACH_GLOBAL_CAP`). Without the key the
+  coach screen says "coming soon".
+- `delete-account`: deploy with `--no-verify-jwt`.
+- `telegram-webhook`: Telegram notifications (see `24_telegram.sql`).
 
-You need your own developer accounts: **Apple Developer** ($99/yr) and **Google Play**
-($25 one-time). Then:
+`app.json` → `expo.extra` holds the Supabase URL and anon key.
+
+## 3. Ship
+
+**Web:** `npm run deploy` (exports and deploys to EAS Hosting).
+
+**Phone apps:** QR scanning, QR tickets and the map use native modules
+(`expo-camera`, `react-native-svg`, `react-native-webview`), so they need a new build:
 
 ```bash
-npm install -g eas-cli
-eas login
-eas build:configure
-eas build --platform android      # produces an .aab / .apk
-eas build --platform ios          # requires the Apple account
-eas submit --platform android     # uploads to Play Console
-eas submit --platform ios         # uploads to App Store Connect
+npx eas-cli build --platform android
+npx eas-cli build --platform ios
+npx eas-cli submit --platform android
+npx eas-cli submit --platform ios
 ```
 
-Both stores then run their review (a few hours to a few days). Full guide:
-https://docs.expo.dev/submit/introduction/
+Older installed builds keep working; they skip the map and show "Update Tadbirly to see
+your QR ticket" until updated.
 
 ---
-
-## Before you launch — the two stubs to finish
-
-- **Payments (Pro).** `app/pro.js` currently flips `is_pro` directly. Replace with a real
-  provider — **RevenueCat** is easiest for app-store in-app purchases; local card rails
-  **Payme / Click** work for web/off-store. Set `is_pro` from a **server-side webhook**,
-  never from the client.
-- **AI coach.** `app/coach.js` uses a simple rule. Point it at an LLM endpoint (e.g. an
-  Anthropic/OpenAI call behind a Supabase Edge Function so your key stays server-side).
 
 ## Project structure
 
 ```
 app/
-  _layout.js          root nav + auth redirect
-  (auth)/             login, signup
-  (tabs)/             feed, venues, create, chats, profile
-  post/[id].js        post detail + apply
-  chat/[id].js        realtime conversation
-  pro.js  coach.js    paywall, AI coach
-lib/       supabase client, auth context, theme
-components/ shared UI (Button, Card, Tag)
-supabase/  schema.sql, seed.sql
+  _layout.js            root stack, auth + onboarding redirects, language provider
+  (auth)/               login, signup, reset
+  (tabs)/               feed, create, team-builder, my-events, portal, chats, profile
+  post/[id].js          event page: apply, save, share, calendar, map, ticket, reviews
+  onboarding.js         language, interests, city
+  saved.js  settings.js dashboard.js  scan/[postId].js  review/[postId].js
+components/
+  ui.js                 Button, TextField, Chip, IconButton, EmptyState, Avatar, …
+  EventCard.js EventForm.js MapPreview.js Ticket.js Stars.js
+lib/
+  theme.js              colours (light/dark), type scale, shadows, categories, cities
+  i18n.js + locales/    t('English text') → uz / ru dictionaries
+  discover.js           saved events, sharing, calendar, maps, "For you" ranking
+supabase/               numbered SQL migrations + edge functions
 ```
 
-## Roadmap ideas (see the chat message that shipped this)
-
-Post moderation queue · QR e-ticket + check-in scanner (reliability score driver) ·
-push notifications · organizer analytics · venue map with `react-native-maps` ·
-university email verification for the "verified student" badge.
+### Translating
+Text is written in English inside `t('…')`; `lib/locales/uz.js` and `ru.js` map each
+English sentence to its translation (missing ones fall back to English). Placeholders
+look like `{n}` / `{name}`. Have a native speaker review both files before a big launch.

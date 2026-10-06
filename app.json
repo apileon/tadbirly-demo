@@ -23,7 +23,7 @@
       },
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Tadbirly uses your photos so you can set a profile picture, cover and event images.",
-        "NSCameraUsageDescription": "Tadbirly uses your camera so you can take a profile picture, cover and event images.",
+        "NSCameraUsageDescription": "Tadbirly uses your camera to take profile and event photos, and to scan tickets at event check-in.",
         "UIBackgroundModes": [
           "remote-notification"
         ]
@@ -70,7 +70,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Tadbirly uses your photos so you can set a profile picture, cover and event images.",
-          "cameraPermission": "Tadbirly uses your camera so you can take a profile picture, cover and event images.",
+          "cameraPermission": "Tadbirly uses your camera to take profile and event photos, and to scan tickets at event check-in.",
           "microphonePermission": false
         }
       ],
@@ -84,7 +84,14 @@
         }
       ],
       "expo-web-browser",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Tadbirly uses your camera to take profile and event photos, and to scan tickets at event check-in.",
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false

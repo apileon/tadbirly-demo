@@ -1,12 +1,14 @@
 import React, { useEffect } from 'react';
 import { View, ActivityIndicator, TouchableOpacity, Text, Platform } from 'react-native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments, usePathname } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { BadgeProvider } from '../lib/badges';
-import { colors } from '../lib/theme';
+import { colors, isDark } from '../lib/theme';
+import { LocaleProvider, t } from '../lib/i18n';
 import NotificationToast from '../components/NotificationToast';
 import InstallPrompt from '../components/InstallPrompt';
 import { unlockAudio } from '../lib/feedback';
@@ -72,25 +74,34 @@ function HeaderBack() {
     <TouchableOpacity
       onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)'); }}
       hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      activeOpacity={0.8}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel="Back"
       style={{
-        backgroundColor: colors.brand,
-        borderRadius: 999,
-        paddingVertical: 7,
-        paddingHorizontal: 14,
-        marginRight: 12,
-        marginLeft: 4,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.bg,
+        marginRight: 10,
+        marginLeft: Platform.OS === 'web' ? 8 : 0,
       }}
     >
-      <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '800' }}>‹ Back</Text>
+      <Ionicons name="chevron-back" size={22} color={colors.ink} style={{ marginLeft: -2 }} />
     </TouchableOpacity>
   );
 }
 
 // Redirect users into or out of the app depending on auth state.
+// A shared event link opened while signed out: remembered here and opened
+// right after login, instead of dropping the student on the feed.
+let pendingPath = null;
+
 function useProtectedRoute() {
-  const { session, loading } = useAuth();
+  const { session, profile, loading } = useAuth();
   const segments = useSegments();
+  const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
@@ -103,11 +114,18 @@ function useProtectedRoute() {
     if (['reset-password', 'legal', 'privacy'].includes(segments[0])) return;
     const inAuthGroup = segments[0] === '(auth)';
     if (!session && !inAuthGroup) {
+      if (pathname && pathname !== '/' && !pathname.startsWith('/login')) pendingPath = pathname;
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
-      router.replace('/(tabs)');
+      const next = pendingPath;
+      pendingPath = null;
+      router.replace(next || '/(tabs)');
+    } else if (session && profile && profile.onboarded === false && segments[0] !== 'onboarding') {
+      // New account: pick interests first, so the feed is personal from day one.
+      // (Databases without 29_growth.sql have no `onboarded` — undefined skips this.)
+      router.replace('/onboarding');
     }
-  }, [session, loading, segments]);
+  }, [session, profile, loading, segments, pathname]);
 }
 
 function RootNavigator() {
@@ -118,7 +136,7 @@ function RootNavigator() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.ink }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111511' }}>
         <StatusBar style="light" />
         <ActivityIndicator color="#fff" size="large" />
       </View>
@@ -128,34 +146,51 @@ function RootNavigator() {
   return (
     <View style={{ flex: 1 }}>
     {/* Dark icons on the light app background (no-op on web). */}
-    <StatusBar style="dark" />
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, headerLeft: () => <HeaderBack />, headerBackVisible: false }}>
+    <StatusBar style={isDark ? 'light' : 'dark'} />
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.bg },
+        headerLeft: () => <HeaderBack />,
+        headerBackVisible: false,
+        headerShadowVisible: false,
+        headerTitleAlign: 'center',
+        headerStyle: { backgroundColor: colors.card },
+        headerTitleStyle: { fontSize: 16, fontWeight: '700', color: colors.ink },
+      }}
+    >
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="reset-password" options={{ headerShown: true, title: 'New password' }} />
-      <Stack.Screen name="post/[id]" options={{ headerShown: true, title: 'Details' }} />
-      <Stack.Screen name="chat/[id]" options={{ headerShown: true, title: 'Chat' }} />
-      <Stack.Screen name="event-chat/[postId]" options={{ headerShown: true, title: 'Event chat' }} />
-      <Stack.Screen name="coach" options={{ headerShown: true, title: 'AI Career Coach' }} />
-      <Stack.Screen name="legal" options={{ headerShown: true, title: 'Privacy & Terms' }} />
-      <Stack.Screen name="my-posts" options={{ headerShown: true, title: 'My posts' }} />
-      <Stack.Screen name="my-applications" options={{ headerShown: true, title: 'My applications' }} />
-      <Stack.Screen name="applicants/[postId]" options={{ headerShown: true, title: 'Applicants' }} />
-      <Stack.Screen name="passport" options={{ headerShown: true, title: 'Student Passport' }} />
-      <Stack.Screen name="badge/[postId]" options={{ headerShown: true, title: 'Event medal' }} />
-      <Stack.Screen name="user/[id]" options={{ headerShown: true, title: 'Profile' }} />
-      <Stack.Screen name="search" options={{ headerShown: true, title: 'Find people' }} />
-      <Stack.Screen name="friends/[id]" options={{ headerShown: true, title: 'Friends' }} />
-      <Stack.Screen name="leaderboard" options={{ headerShown: true, title: '🏆 Ranking' }} />
-      <Stack.Screen name="notifications" options={{ headerShown: true, title: '🔔 Notifications' }} />
-      <Stack.Screen name="event-edit/[id]" options={{ headerShown: true, title: 'Edit event' }} />
-      <Stack.Screen name="news/create" options={{ headerShown: true, title: 'Post news' }} />
-      <Stack.Screen name="news/[id]" options={{ headerShown: true, title: 'News' }} />
-      <Stack.Screen name="team-apply/[postId]" options={{ headerShown: true, title: 'Apply as a team' }} />
-      <Stack.Screen name="team/create" options={{ headerShown: true, title: 'Create team' }} />
-      <Stack.Screen name="team/[id]" options={{ headerShown: true, title: 'Team' }} />
-      <Stack.Screen name="accepted/[postId]" options={{ headerShown: true, title: 'Accepted participants' }} />
-      <Stack.Screen name="end/[postId]" options={{ headerShown: true, title: 'End event' }} />
+      <Stack.Screen name="reset-password" options={{ headerShown: true, title: t('New password') }} />
+      <Stack.Screen name="post/[id]" options={{ headerShown: true, title: t('Details') }} />
+      <Stack.Screen name="chat/[id]" options={{ headerShown: true, title: t('Chat') }} />
+      <Stack.Screen name="event-chat/[postId]" options={{ headerShown: true, title: t('Event chat') }} />
+      <Stack.Screen name="coach" options={{ headerShown: true, title: t('AI Career Coach') }} />
+      <Stack.Screen name="legal" options={{ headerShown: true, title: t('Privacy & Terms') }} />
+      <Stack.Screen name="my-posts" options={{ headerShown: true, title: t('My posts') }} />
+      <Stack.Screen name="my-applications" options={{ headerShown: true, title: t('My applications') }} />
+      <Stack.Screen name="applicants/[postId]" options={{ headerShown: true, title: t('Applicants') }} />
+      <Stack.Screen name="passport" options={{ headerShown: true, title: t('Student Passport') }} />
+      <Stack.Screen name="badge/[postId]" options={{ headerShown: true, title: t('Event medal') }} />
+      <Stack.Screen name="user/[id]" options={{ headerShown: true, title: t('Profile') }} />
+      <Stack.Screen name="search" options={{ headerShown: true, title: t('Find people') }} />
+      <Stack.Screen name="friends/[id]" options={{ headerShown: true, title: t('Friends') }} />
+      <Stack.Screen name="leaderboard" options={{ headerShown: true, title: t('Ranking') }} />
+      <Stack.Screen name="notifications" options={{ headerShown: true, title: t('Notifications') }} />
+      <Stack.Screen name="event-edit/[id]" options={{ headerShown: true, title: t('Edit event') }} />
+      <Stack.Screen name="news/create" options={{ headerShown: true, title: t('Post news') }} />
+      <Stack.Screen name="news/[id]" options={{ headerShown: true, title: t('News') }} />
+      <Stack.Screen name="team-apply/[postId]" options={{ headerShown: true, title: t('Apply as a team') }} />
+      <Stack.Screen name="team/create" options={{ headerShown: true, title: t('Create team') }} />
+      <Stack.Screen name="team/[id]" options={{ headerShown: true, title: t('Team') }} />
+      <Stack.Screen name="accepted/[postId]" options={{ headerShown: true, title: t('Accepted participants') }} />
+      <Stack.Screen name="end/[postId]" options={{ headerShown: true, title: t('End event') }} />
+      <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="saved" options={{ headerShown: true, title: t('Saved events') }} />
+      <Stack.Screen name="scan/[postId]" options={{ headerShown: true, title: t('Check-in') }} />
+      <Stack.Screen name="dashboard" options={{ headerShown: true, title: t('Event stats') }} />
+      <Stack.Screen name="settings" options={{ headerShown: true, title: t('Settings') }} />
+      <Stack.Screen name="review/[postId]" options={{ headerShown: true, title: t('Rate this event') }} />
     </Stack>
     <NotificationToast />
     <InstallPrompt />
@@ -166,11 +201,13 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <BadgeProvider>
-          <RootNavigator />
-        </BadgeProvider>
-      </AuthProvider>
+      <LocaleProvider>
+        <AuthProvider>
+          <BadgeProvider>
+            <RootNavigator />
+          </BadgeProvider>
+        </AuthProvider>
+      </LocaleProvider>
     </SafeAreaProvider>
   );
 }

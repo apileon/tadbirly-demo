@@ -7,11 +7,12 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius } from '../../lib/theme';
-import { Avatar } from '../../components/ui';
+import { colors, radius, type } from '../../lib/theme';
+import { Avatar, Button, IconButton, EmptyState } from '../../components/ui';
 import { sharedStreak } from '../../lib/social';
 import { confirmAsync, notify } from '../../lib/notify';
-import { useReportSheet, ReportButton } from '../../lib/moderation';
+import { useReportSheet } from '../../lib/moderation';
+import { t, dateLocale } from '../../lib/i18n';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -122,8 +123,8 @@ function inFront() {
 // Only friendlier words for the server's refusals; the rules live in supabase/23.
 function sendError(error) {
   const msg = error?.message || '';
-  if (/row-level security|violates .*policy/i.test(msg)) return 'You can’t message this person right now.';
-  return msg || 'Please try again.';
+  if (/row-level security|violates .*policy/i.test(msg)) return t('You can’t message this person right now.');
+  return msg || t('Please try again.');
 }
 
 export default function ChatRoom() {
@@ -134,7 +135,7 @@ export default function ChatRoom() {
   const [text, setText] = useState('');
   const [header, setHeader] = useState({ name: '', streak: 0, otherId: null, avatar: null });
   const router = useRouter();
-  // Header "⚑" → report this conversation and/or block the other person.
+  // Header flag button: report this conversation and/or block the other person.
   // Blocking also stops new messages both ways (enforced by the database).
   const safety = useReportSheet({
     onBlocked: () => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/chats'); },
@@ -176,7 +177,7 @@ export default function ChatRoom() {
       const iAmOrg = chat.organizer_id === uid;
       const otherId = iAmOrg ? chat.participant_id : chat.organizer_id;
       const otherP = iAmOrg ? chat.participant : chat.organizer;
-      const name = otherP?.full_name ?? 'Chat';
+      const name = otherP?.full_name ?? t('Chat');
       const { data: aw } = await supabase.from('awards').select('recipient_id, post_id').in('recipient_id', [uid, otherId]).eq('verified', true);
       const mine = (aw ?? []).filter((r) => r.recipient_id === uid).map((r) => r.post_id);
       const theirs = (aw ?? []).filter((r) => r.recipient_id === otherId).map((r) => r.post_id);
@@ -319,10 +320,10 @@ export default function ChatRoom() {
     };
   }, [id, uid]);
 
-  function onType(t) {
-    setText(t);
+  function onType(value) {
+    setText(value);
     const now = Date.now();
-    if (typing.current && t && now - lastSent.current > 1200) {
+    if (typing.current && value && now - lastSent.current > 1200) {
       lastSent.current = now;
       typing.current.send({ uid });
     }
@@ -332,7 +333,7 @@ export default function ChatRoom() {
   async function send() {
     const body = text.trim();
     if (!body) return; // whitespace-only never goes out (the server refuses it anyway)
-    if (body.length > MAX_MESSAGE) return notify('Message too long', `Please keep it under ${MAX_MESSAGE} characters.`);
+    if (body.length > MAX_MESSAGE) return notify(t('Message too long'), t('Please keep it under {n} characters.', { n: MAX_MESSAGE }));
     setText('');
     const tempId = `temp-${Date.now()}-${Math.random()}`;
     const optimistic = { id: tempId, chat_id: id, sender_id: uid, body, created_at: new Date().toISOString(), pending: true };
@@ -347,7 +348,7 @@ export default function ChatRoom() {
     if (error) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setText(body);
-      return notify('Could not send', sendError(error));
+      return notify(t('Could not send'), sendError(error));
     }
     setMessages((prev) => {
       const rest = prev.filter((m) => m.id !== tempId);
@@ -357,11 +358,11 @@ export default function ChatRoom() {
 
   async function remove(m) {
     if (m.sender_id !== uid) return;
-    if (!(await confirmAsync('Delete message?', 'This removes it for both of you.', 'Delete'))) return;
+    if (!(await confirmAsync(t('Delete message?'), t('This removes it for both of you.'), t('Delete')))) return;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages((prev) => prev.filter((x) => x.id !== m.id));
     const { error } = await supabase.from('messages').delete().eq('id', m.id);
-    if (error) { notify('Could not delete', error.message); load(); }
+    if (error) { notify(t('Could not delete'), error.message); load(); }
   }
 
   // fromChat lets their profile's "Message" button come back here instead of
@@ -387,20 +388,27 @@ export default function ChatRoom() {
           <Avatar uri={header.avatar} name={header.name} id={header.otherId} size={34} />
           <View>
             <Text style={styles.streakName}>{header.name}</Text>
-            <Text style={styles.streakFire}>
-              🔥 {header.streak} event{header.streak === 1 ? '' : 's'} together
-            </Text>
+            <View style={styles.streakRow}>
+              <Ionicons name="flame-outline" size={13} color={colors.warn} />
+              <Text style={styles.streakFire}>
+                {header.streak === 1 ? t('1 event together') : t('{n} events together', { n: header.streak })}
+              </Text>
+            </View>
           </View>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.profileBtn}
+        <Button
+          title={t('Profile')}
+          icon="person-outline"
+          variant="soft"
+          size="sm"
           onPress={openProfile}
           disabled={!header.otherId}
-        >
-          <Text style={styles.profileBtnText}>👤 Profile</Text>
-        </TouchableOpacity>
-        <ReportButton
-          label="⚑"
+        />
+        <IconButton
+          icon="flag-outline"
+          size={36}
+          color={colors.muted}
+          label={t('Report or block')}
           style={{ marginLeft: 8 }}
           onPress={() => header.otherId && safety.open({ type: 'chat', id, userId: header.otherId, name: header.name })}
         />
@@ -409,9 +417,9 @@ export default function ChatRoom() {
         ref={listRef}
         data={messages}
         keyExtractor={(m) => m.id}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={styles.list}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-        ListEmptyComponent={<Text style={styles.empty}>Say hello 👋</Text>}
+        ListEmptyComponent={<EmptyState icon="hand-left-outline" title={t('Say hello')} />}
         renderItem={({ item, index }) => {
           const mine = item.sender_id === uid;
           const prev = messages[index - 1];
@@ -440,12 +448,21 @@ export default function ChatRoom() {
                   !endsGroup && { marginBottom: 2, ...(mine ? { borderBottomRightRadius: 6 } : { borderBottomLeftRadius: 6 }) },
                 ]}
               >
-                <Text style={[styles.body, mine && { color: '#fff' }]}>{item.body}</Text>
+                <Text style={[styles.body, mine && { color: colors.onBrand }]}>{item.body}</Text>
                 {endsGroup && (
-                  <Text style={[styles.stamp, mine ? styles.stampMine : styles.stampTheirs]}>
-                    {clock(item.created_at)}
-                    {mine ? (item.pending ? ' · 🕘' : item.read_at ? ' · ✓✓' : ' · ✓') : ''}
-                  </Text>
+                  <View style={styles.stampRow}>
+                    <Text style={[styles.stamp, mine ? styles.stampMine : styles.stampTheirs]}>
+                      {clock(item.created_at)}
+                    </Text>
+                    {mine ? (
+                      <Ionicons
+                        name={item.pending ? 'time-outline' : item.read_at ? 'checkmark-done' : 'checkmark'}
+                        size={13}
+                        color={STAMP_MINE}
+                        accessibilityLabel={item.pending ? t('Sending') : item.read_at ? t('Read') : t('Sent')}
+                      />
+                    ) : null}
+                  </View>
                 )}
               </TouchableOpacity>
             </View>
@@ -455,7 +472,7 @@ export default function ChatRoom() {
       {theyType && (
         <View style={styles.typingRow}>
           <View style={styles.typingBubble}>
-            <Text style={styles.typingText}>{header.name || 'They'} is typing…</Text>
+            <Text style={styles.typingText}>{header.name ? t('{name} is typing…', { name: header.name }) : t('Typing…')}</Text>
           </View>
         </View>
       )}
@@ -464,14 +481,14 @@ export default function ChatRoom() {
           style={styles.input}
           value={text}
           onChangeText={onType}
-          placeholder="Message…"
-          placeholderTextColor={colors.muted}
+          placeholder={t('Message…')}
+          placeholderTextColor={colors.faint}
           maxLength={MAX_MESSAGE}
           onSubmitEditing={send}
           blurOnSubmit={false}
         />
-        <TouchableOpacity style={styles.sendBtn} onPress={send}>
-          <Ionicons name="send" color="#fff" size={18} />
+        <TouchableOpacity style={styles.sendBtn} onPress={send} accessibilityRole="button" accessibilityLabel={t('Send')}>
+          <Ionicons name="send" color={colors.onBrand} size={18} />
         </TouchableOpacity>
       </Animated.View>
       {safety.sheet}
@@ -480,38 +497,41 @@ export default function ChatRoom() {
 }
 
 const dayKey = (iso) => new Date(iso).toDateString();
-const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const clock = (iso) => new Date(iso).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' });
 function dayLabel(iso) {
   const d = new Date(iso);
   const today = new Date();
   const yest = new Date(); yest.setDate(yest.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return 'Today';
-  if (d.toDateString() === yest.toDateString()) return 'Yesterday';
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+  if (d.toDateString() === today.toDateString()) return t('Today');
+  if (d.toDateString() === yest.toDateString()) return t('Yesterday');
+  return d.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long' });
 }
 
+// Time stamps and ticks on my own (brand-coloured) bubbles.
+const STAMP_MINE = 'rgba(255,255,255,0.7)';
+
 const styles = StyleSheet.create({
+  list: { padding: 16, width: '100%', maxWidth: 720, alignSelf: 'center' },
   dayRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 14 },
   dayLine: { flex: 1, height: 1, backgroundColor: colors.line },
-  dayText: { fontSize: 11.5, color: colors.muted, fontWeight: '700' },
-  stamp: { fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
-  stampMine: { color: 'rgba(255,255,255,0.65)' },
+  dayText: { ...type.caption },
+  stampRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4, alignSelf: 'flex-end' },
+  stamp: { fontSize: 10 },
+  stampMine: { color: STAMP_MINE },
   stampTheirs: { color: colors.muted },
   streakBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.card, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.line },
   who: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   streakName: { fontSize: 15, fontWeight: '800', color: colors.ink },
-  streakFire: { fontSize: 12.5, fontWeight: '700', color: '#c9772a', marginTop: 1 },
-  profileBtn: { backgroundColor: colors.brandSoft, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 13 },
-  profileBtnText: { color: colors.brand, fontWeight: '800', fontSize: 12.5 },
-  bubble: { maxWidth: '78%', paddingVertical: 10, paddingHorizontal: 13, borderRadius: 16, marginBottom: 8 },
+  streakRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
+  streakFire: { fontSize: 12.5, fontWeight: '700', color: colors.warn },
+  bubble: { maxWidth: '78%', paddingVertical: 10, paddingHorizontal: 13, borderRadius: radius.lg, marginBottom: 8 },
   mine: { alignSelf: 'flex-end', backgroundColor: colors.brand, borderBottomRightRadius: 4 },
   theirs: { alignSelf: 'flex-start', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderBottomLeftRadius: 4 },
   body: { fontSize: 14, lineHeight: 20, color: colors.ink },
   typingRow: { paddingHorizontal: 16, paddingBottom: 6 },
-  typingBubble: { alignSelf: 'flex-start', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: 16, borderBottomLeftRadius: 4, paddingVertical: 8, paddingHorizontal: 13 },
+  typingBubble: { alignSelf: 'flex-start', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, borderBottomLeftRadius: 4, paddingVertical: 8, paddingHorizontal: 13 },
   typingText: { fontSize: 12.5, color: colors.muted, fontStyle: 'italic' },
   inputRow: { flexDirection: 'row', gap: 8, padding: 12, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.line },
-  input: { flex: 1, backgroundColor: colors.bg, borderRadius: radius.pill, paddingVertical: 11, paddingHorizontal: 16, fontSize: 14, color: colors.ink },
+  input: { flex: 1, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.line, borderRadius: radius.pill, paddingVertical: 11, paddingHorizontal: 16, fontSize: 14, color: colors.ink },
   sendBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
-  empty: { textAlign: 'center', color: colors.muted, marginTop: 40 },
 });

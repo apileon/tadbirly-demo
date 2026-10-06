@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { colors } from '../lib/theme';
 
 // A small red dot, optionally with a count in it. Renders nothing at 0 so
 // callers can drop it in unconditionally.
@@ -32,7 +33,7 @@ const styles = StyleSheet.create({
   plain: {
     width: 10, height: 10, borderRadius: 5,
     backgroundColor: '#e5484d',
-    borderWidth: 1.5, borderColor: '#fff',
+    borderWidth: 1.5, borderColor: colors.card,
   },
   bubble: {
     minWidth: 18, height: 18, borderRadius: 9,

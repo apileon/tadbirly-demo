@@ -7,6 +7,7 @@ import { colors } from '../../lib/theme';
 import { useAuth } from '../../lib/auth';
 import { useBadges, portalCount } from '../../lib/badges';
 import { IconDot } from '../../components/Dot';
+import { t } from '../../lib/i18n';
 
 // A tab icon that can carry a red dot in its top-right corner.
 function TabIcon({ name, color, size, n = 0 }) {
@@ -33,23 +34,23 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.muted,
-        tabBarStyle: { borderTopColor: colors.line, height: 52 + bottomPad, paddingBottom: bottomPad, paddingTop: 6, backgroundColor: colors.card },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarStyle: { borderTopColor: colors.line, height: 56 + bottomPad, paddingBottom: bottomPad, paddingTop: 7, backgroundColor: colors.card },
+        tabBarLabelStyle: { fontSize: 10.5, fontWeight: '600', letterSpacing: 0.1 },
       }}
     >
       {/* Feed — participants only */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Feed',
-          tabBarIcon: ({ color, size }) => <Ionicons name="compass-outline" color={color} size={size} />,
+          title: t('Feed'),
+          tabBarIcon: ({ color, size, focused }) => <Ionicons name={focused ? 'compass' : 'compass-outline'} color={color} size={size - 1} />,
         }}
       />
       {/* Post event — organizers only */}
       <Tabs.Screen
         name="create"
         options={{
-          title: 'Post event',
+          title: t('Post event'),
           href: isOrg ? '/create' : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" color={color} size={size + 8} />,
         }}
@@ -58,27 +59,27 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="team-builder"
         options={{
-          title: 'Teams',
+          title: t('Teams'),
           href: isOrg ? null : '/team-builder',
-          tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size, focused }) => <Ionicons name={focused ? 'people' : 'people-outline'} color={color} size={size - 1} />,
         }}
       />
       {/* My events — organizers only */}
       <Tabs.Screen
         name="my-events"
         options={{
-          title: 'My events',
+          title: t('My events'),
           href: isOrg ? '/my-events' : null,
-          tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size, focused }) => <Ionicons name={focused ? 'calendar' : 'calendar-outline'} color={color} size={size - 1} />,
         }}
       />
       {/* Portal — both (content differs by role) */}
       <Tabs.Screen
         name="portal"
         options={{
-          title: 'Portal',
-          tabBarIcon: ({ color, size }) => (
-            <TabIcon name="albums-outline" color={color} size={size} n={portalCount(badges)} />
+          title: t('Portal'),
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon name={focused ? 'albums' : 'albums-outline'} color={color} size={size - 1} n={portalCount(badges)} />
           ),
         }}
       />
@@ -86,17 +87,17 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="chats"
         options={{
-          title: 'Social',
-          tabBarIcon: ({ color, size }) => (
-            <TabIcon name="chatbubbles-outline" color={color} size={size} n={badges.messages} />
+          title: t('Social'),
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon name={focused ? 'chatbubbles' : 'chatbubbles-outline'} color={color} size={size - 1} n={badges.messages} />
           ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} />,
+          title: t('Profile'),
+          tabBarIcon: ({ color, size, focused }) => <Ionicons name={focused ? 'person' : 'person-outline'} color={color} size={size - 1} />,
         }}
       />
     </Tabs>

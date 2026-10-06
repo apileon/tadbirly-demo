@@ -1,18 +1,23 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { notify, confirmAsync } from '../../lib/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, CATEGORIES } from '../../lib/theme';
-import { Card, Button, Avatar } from '../../components/ui';
+import { colors, radius, type, CATEGORIES } from '../../lib/theme';
+import { Card, Button, Avatar, EmptyState, SectionHeader, Tag } from '../../components/ui';
 import { respondConnect, sendConnect } from '../../lib/social';
 import { respondTeam, pendingTeams, approveTeam, rejectTeam, deleteTeam, teamRoster } from '../../lib/teams';
 import { useBadges, requestsCount, teamsCount, eventsCount } from '../../lib/badges';
 import Dot from '../../components/Dot';
+import { t } from '../../lib/i18n';
 
 const SEGMENTS = ['events', 'networking', 'teams'];
+
+// Applications are fetched without the post's category, so the icon follows the coarse kind.
+const KIND_ICONS = { event: 'calendar-outline', internship: 'briefcase-outline', mun: 'globe-outline' };
 
 export default function Portal() {
   const router = useRouter();
@@ -39,11 +44,11 @@ export default function Portal() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
       <View style={styles.head}>
-        <Text style={styles.h1}>Portal</Text>
+        <Text style={styles.heading}>{t('Portal')}</Text>
         <View style={styles.seg}>
-          <SegBtn label="🎪 Events" on={tab === 'events'} onPress={() => choose('events')} n={eventsCount(badges)} />
-          <SegBtn label="🤝 Requests" on={tab === 'networking'} onPress={() => choose('networking')} n={requestsCount(badges)} />
-          <SegBtn label="🧩 Teams" on={tab === 'teams'} onPress={() => choose('teams')} n={teamsCount(badges)} />
+          <SegBtn icon="calendar-outline" label={t('Events')} on={tab === 'events'} onPress={() => choose('events')} n={eventsCount(badges)} />
+          <SegBtn icon="person-add-outline" label={t('Requests')} on={tab === 'networking'} onPress={() => choose('networking')} n={requestsCount(badges)} />
+          <SegBtn icon="people-outline" label={t('Teams')} on={tab === 'teams'} onPress={() => choose('teams')} n={teamsCount(badges)} />
         </View>
       </View>
       {/* All three stay mounted so switching is instant — no reload, no flicker. */}
@@ -76,14 +81,14 @@ function TeamApprovalDivision() {
   return (
     <FlatList
       data={teams}
-      keyExtractor={(t) => t.id}
-      contentContainerStyle={{ padding: 16 }}
+      keyExtractor={(team) => team.id}
+      contentContainerStyle={styles.list}
       ListHeaderComponent={
         <Text style={styles.legend}>
-          Teams need your approval before they can apply to events. Check the members, then approve or reject.
+          {t('Teams need your approval before they can apply to events. Check the members, then approve or reject.')}
         </Text>
       }
-      ListEmptyComponent={<Text style={styles.empty}>No teams waiting for approval right now.</Text>}
+      ListEmptyComponent={<EmptyState icon="people-outline" title={t('No teams waiting for approval right now.')} />}
       renderItem={({ item }) => <PendingTeamCard team={item} onChanged={changed} router={router} />}
     />
   );
@@ -100,7 +105,7 @@ function PendingTeamCard({ team, onChanged, router }) {
 
   async function act(kind) {
     if (kind === 'delete') {
-      const ok = await confirmAsync('Delete this team?', `“${team.name}” will be removed completely for everyone.`, 'Delete');
+      const ok = await confirmAsync(t('Delete this team?'), t('"{name}" will be removed completely for everyone.', { name: team.name }), t('Delete'));
       if (!ok) return;
     }
     setBusy(true);
@@ -108,44 +113,60 @@ function PendingTeamCard({ team, onChanged, router }) {
       : kind === 'reject' ? await rejectTeam(team.id)
       : await deleteTeam(team.id);
     setBusy(false);
-    if (error) return notify('Could not update', error.message);
+    if (error) return notify(t('Could not update'), error.message);
     notify(
-      kind === 'approve' ? 'Team approved ✅' : kind === 'reject' ? 'Team rejected' : 'Team deleted',
-      kind === 'approve' ? `“${team.name}” can now apply to events.` : '',
+      kind === 'approve' ? t('Team approved') : kind === 'reject' ? t('Team rejected') : t('Team deleted'),
+      kind === 'approve' ? t('"{name}" can now apply to events.', { name: team.name }) : '',
     );
     onChanged();
   }
 
+  const owner = team.owner?.full_name ?? t('someone');
   return (
     <Card>
-      <Text style={styles.name}>🧩 {team.name}</Text>
-      <Text style={styles.meta}>
-        {team.competition ?? 'Competition'} · created by {team.owner?.full_name ?? 'someone'}
-        {team.owner?.university ? ` · ${team.owner.university}` : ''}
-      </Text>
+      <View style={styles.rowTop}>
+        <View style={styles.teamIcon}>
+          <Ionicons name="people-outline" size={20} color={colors.brand} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name}>{team.name}</Text>
+          <Text style={styles.meta}>
+            {team.competition ?? t('Competition')} · {t('created by {name}', { name: owner })}
+            {team.owner?.university ? ` · ${team.owner.university}` : ''}
+          </Text>
+        </View>
+      </View>
       {team.description ? <Text style={styles.bio}>“{team.description}”</Text> : null}
 
-      <TouchableOpacity onPress={showMembers} style={{ marginTop: 10 }}>
-        <Text style={styles.connect}>{members ? '▾ Hide members' : '▸ See members'}</Text>
+      <TouchableOpacity onPress={showMembers} style={styles.toggle}>
+        <Ionicons name={members ? 'chevron-down' : 'chevron-forward'} size={15} color={colors.brand} />
+        <Text style={styles.link}>{members ? t('Hide members') : t('See members')}</Text>
       </TouchableOpacity>
       {members && (
         <View style={{ marginTop: 6 }}>
           {members.length === 0 ? (
-            <Text style={styles.meta}>This team has no accepted members yet.</Text>
+            <Text style={styles.meta}>{t('This team has no accepted members yet.')}</Text>
           ) : members.map((m) => (
             <TouchableOpacity key={m.id} onPress={() => router.push(`/user/${m.id}`)} style={styles.memberRow}>
-              <Text style={styles.memberName}>{m.full_name}</Text>
-              <Text style={styles.meta}>{m.university ?? ''} · ⭐ {m.reliability ?? 75}% · view →</Text>
+              <Avatar uri={m.avatar_url} name={m.full_name} id={m.id} size={32} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.memberName}>{m.full_name}</Text>
+                <View style={styles.metaRow}>
+                  {m.university ? <Text style={styles.meta}>{m.university} · </Text> : null}
+                  <Reliability value={m.reliability} />
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.faint} />
             </TouchableOpacity>
           ))}
         </View>
       )}
 
       <View style={styles.actions}>
-        <Button title="Approve" variant="green" style={{ flex: 1 }} loading={busy} onPress={() => act('approve')} />
-        <Button title="Reject" variant="ghost" style={{ flex: 1 }} onPress={() => act('reject')} />
+        <Button title={t('Approve')} icon="checkmark" variant="primary" style={{ flex: 1 }} loading={busy} onPress={() => act('approve')} />
+        <Button title={t('Reject')} variant="ghost" style={{ flex: 1 }} onPress={() => act('reject')} />
       </View>
-      <Button title="🗑️ Delete team" variant="danger" style={{ marginTop: 8 }} onPress={() => act('delete')} />
+      <Button title={t('Delete team')} icon="trash-outline" variant="danger" size="sm" style={{ marginTop: 8 }} onPress={() => act('delete')} />
     </Card>
   );
 }
@@ -168,8 +189,8 @@ function TeamsDivision({ session }) {
     setInvites(inv ?? []);
     // Join requests to teams I own
     const { data: myTeams } = await supabase.from('teams').select('id, name').eq('owner_id', uid);
-    const ids = (myTeams ?? []).map((t) => t.id);
-    const tmap = {}; (myTeams ?? []).forEach((t) => { tmap[t.id] = t.name; });
+    const ids = (myTeams ?? []).map((tm) => tm.id);
+    const tmap = {}; (myTeams ?? []).forEach((tm) => { tmap[tm.id] = tm.name; });
     if (ids.length) {
       const { data: reqs } = await supabase
         .from('team_members')
@@ -184,7 +205,7 @@ function TeamsDivision({ session }) {
   async function respond(rowId, accept) {
     const { error } = await respondTeam(rowId, accept);
     // Used to be ignored: a refused accept looked exactly like a successful one.
-    if (error) notify('Could not update', error.message);
+    if (error) notify(t('Could not update'), error.message);
     else refreshBadges(); // your own answer writes no notification for you
     load();
   }
@@ -194,34 +215,51 @@ function TeamsDivision({ session }) {
     <FlatList
       data={requests}
       keyExtractor={(r) => r.id}
-      contentContainerStyle={{ padding: 16 }}
+      contentContainerStyle={styles.list}
       ListHeaderComponent={
         <View>
-          {invites.length > 0 && <Text style={styles.section}>Team invites for you</Text>}
+          {invites.length > 0 && <SectionHeader title={t('Team invites for you')} style={{ marginTop: 4 }} />}
           {invites.map((i) => (
             <Card key={i.id}>
-              <TouchableOpacity onPress={() => i.team?.id && router.push(`/team/${i.team.id}`)}>
-                <Text style={styles.name}>🧩 {i.team?.name}</Text>
-                <Text style={styles.meta}>{i.team?.competition ?? 'Competition'} · view team →</Text>
+              <TouchableOpacity style={styles.rowTop} onPress={() => i.team?.id && router.push(`/team/${i.team.id}`)}>
+                <View style={styles.teamIcon}>
+                  <Ionicons name="people-outline" size={20} color={colors.brand} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{i.team?.name}</Text>
+                  <Text style={styles.meta}>{i.team?.competition ?? t('Competition')}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color={colors.faint} accessibilityLabel={t('View team')} />
               </TouchableOpacity>
               <View style={styles.actions}>
-                <Button title="Accept" variant="green" style={{ flex: 1 }} onPress={() => respond(i.id, true)} />
-                <Button title="Decline" variant="ghost" style={{ flex: 1 }} onPress={() => respond(i.id, false)} />
+                <Button title={t('Accept')} variant="primary" style={{ flex: 1 }} onPress={() => respond(i.id, true)} />
+                <Button title={t('Decline')} variant="ghost" style={{ flex: 1 }} onPress={() => respond(i.id, false)} />
               </View>
             </Card>
           ))}
-          {requests.length > 0 && <Text style={styles.section}>Requests to join your teams</Text>}
+          {requests.length > 0 && <SectionHeader title={t('Requests to join your teams')} style={invites.length ? null : { marginTop: 4 }} />}
         </View>
       }
-      ListEmptyComponent={empty ? <Text style={styles.empty}>No team invites or requests yet. When someone invites you to their team, it shows up here.</Text> : null}
+      ListEmptyComponent={empty ? (
+        <EmptyState
+          icon="people-outline"
+          title={t('No team invites or requests yet')}
+          text={t('When someone invites you to their team, it shows up here.')}
+        />
+      ) : null}
       renderItem={({ item }) => (
         <Card>
-          <Text style={styles.event}>{item.teamName ?? 'Your team'}</Text>
-          <Text style={styles.name}>{item.user?.full_name}</Text>
-          <Text style={styles.meta}>{item.user?.university ?? ''}</Text>
+          <Text style={styles.event}>{item.teamName ?? t('Your team')}</Text>
+          <View style={styles.rowTop}>
+            <Avatar name={item.user?.full_name} id={item.user_id} size={40} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name}>{item.user?.full_name}</Text>
+              {item.user?.university ? <Text style={styles.meta}>{item.user.university}</Text> : null}
+            </View>
+          </View>
           <View style={styles.actions}>
-            <Button title="Accept" variant="green" style={{ flex: 1 }} onPress={() => respond(item.id, true)} />
-            <Button title="Decline" variant="ghost" style={{ flex: 1 }} onPress={() => respond(item.id, false)} />
+            <Button title={t('Accept')} variant="primary" style={{ flex: 1 }} onPress={() => respond(item.id, true)} />
+            <Button title={t('Decline')} variant="ghost" style={{ flex: 1 }} onPress={() => respond(item.id, false)} />
           </View>
         </Card>
       )}
@@ -270,7 +308,7 @@ function EventsDivision({ session, isOrg }) {
     const { data, error } = await supabase.from('applications').update({ status }).eq('id', app.id).select('id');
     if (error || !data?.length) {
       showStatus(app.status);
-      notify('Could not update', error ? error.message : "You don't have permission to do that.");
+      notify(t('Could not update'), error ? error.message : t("You don't have permission to do that."));
       return;
     }
     refreshBadges(); // your own decision writes no notification for you
@@ -281,40 +319,62 @@ function EventsDivision({ session, isOrg }) {
       <FlatList
         data={rows}
         keyExtractor={(r) => r.id}
-        contentContainerStyle={{ padding: 16 }}
-        ListEmptyComponent={<Text style={styles.empty}>No applications yet. Post an event and they'll appear here.</Text>}
+        contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          <EmptyState
+            icon="document-text-outline"
+            title={t('No applications yet')}
+            text={t("Post an event and they'll appear here.")}
+          />
+        }
         renderItem={({ item }) => {
           const a = item.applicant ?? {};
           return (
             <Card>
-              <Text style={styles.event}>{titles[item.post_id] ?? 'Event'}</Text>
+              <Text style={styles.event}>{titles[item.post_id] ?? t('Event')}</Text>
               <View style={styles.rowTop}>
                 <Avatar uri={a.avatar_url} name={a.full_name} id={a.id} size={44} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{a.full_name ?? 'Applicant'}</Text>
-                  <Text style={styles.meta}>{a.university ?? ''}{a.major ? ` · ${a.major}` : ''}</Text>
-                  <Text style={styles.meta}>⭐ {a.reliability ?? 75}%{a.verified_student ? ' · ✔ Verified' : ''}</Text>
+                  <View style={styles.nameRow}>
+                    <Text style={[styles.name, { flexShrink: 1 }]}>{a.full_name ?? t('Applicant')}</Text>
+                    {a.verified_student ? (
+                      <Ionicons name="checkmark-circle" size={15} color={colors.brand} accessibilityLabel={t('Verified student')} />
+                    ) : null}
+                  </View>
+                  {a.university || a.major ? (
+                    <Text style={styles.meta}>{a.university ?? ''}{a.major ? `${a.university ? ' · ' : ''}${a.major}` : ''}</Text>
+                  ) : null}
+                  <View style={[styles.metaRow, { marginTop: 3 }]}>
+                    <Reliability value={a.reliability} />
+                  </View>
                 </View>
                 <StatusPill status={item.status} />
               </View>
               {a.bio ? <Text style={styles.bio}>“{a.bio}”</Text> : null}
               {item.status === 'pending' && (
                 <View style={styles.actions}>
-                  <Button title="Accept" variant="green" style={{ flex: 1 }} onPress={() => decide(item, 'accepted')} />
-                  <Button title="Reject" variant="ghost" style={{ flex: 1 }} onPress={() => decide(item, 'rejected')} />
+                  <Button title={t('Accept')} variant="primary" style={{ flex: 1 }} onPress={() => decide(item, 'accepted')} />
+                  <Button title={t('Reject')} variant="ghost" style={{ flex: 1 }} onPress={() => decide(item, 'rejected')} />
                 </View>
               )}
               <TouchableOpacity
+                style={styles.connectBtn}
                 onPress={async () => {
                   const { error } = await sendConnect(a.id);
                   // Say what actually happened ("You are already friends",
                   // "You can't send a request to this person", offline…) —
                   // every failure used to read "Already sent".
-                  if (error) notify('Could not send request', error.message);
-                  else notify('Invite sent 🤝', `${a.full_name ?? 'They'} can accept you from their Portal.`);
+                  if (error) notify(t('Could not send request'), error.message);
+                  else notify(
+                    t('Invite sent'),
+                    a.full_name
+                      ? t('{name} can accept you from their Portal.', { name: a.full_name })
+                      : t('They can accept you from their Portal.'),
+                  );
                 }}
               >
-                <Text style={styles.connect}>🤝 Connect</Text>
+                <Ionicons name="person-add-outline" size={15} color={colors.brand} />
+                <Text style={styles.link}>{t('Connect')}</Text>
               </TouchableOpacity>
             </Card>
           );
@@ -327,19 +387,32 @@ function EventsDivision({ session, isOrg }) {
     <FlatList
       data={rows}
       keyExtractor={(r) => r.id}
-      contentContainerStyle={{ padding: 16 }}
-      ListHeaderComponent={<Text style={styles.legend}>🟡 Pending · 🟢 Accepted · 🔴 Not selected</Text>}
-      ListEmptyComponent={<Text style={styles.empty}>Nothing yet — apply from the Feed and it appears here.</Text>}
+      contentContainerStyle={styles.list}
+      ListEmptyComponent={
+        <EmptyState
+          icon="document-text-outline"
+          title={t('No applications yet')}
+          text={t('Apply from the Feed and it appears here.')}
+        />
+      }
       renderItem={({ item }) => {
         const p = item.post ?? {};
         const cat = CATEGORIES[p.kind] ?? CATEGORIES.event;
+        const where = p.location ?? p.city;
         return (
           <Card onPress={() => p.id && router.push(`/post/${p.id}`)}>
-            <View style={styles.rowTop}>
-              <Text style={styles.name}>{cat.emoji} {p.title ?? 'Post'}</Text>
+            <View style={[styles.rowTop, { alignItems: 'flex-start' }]}>
+              <View style={[styles.teamIcon, { backgroundColor: cat.soft }]}>
+                <Ionicons name={KIND_ICONS[p.kind] ?? KIND_ICONS.event} size={18} color={cat.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name} numberOfLines={2}>{p.title ?? t('Post')}</Text>
+                {where || p.event_date ? (
+                  <Text style={styles.meta} numberOfLines={1}>{where}{p.event_date ? `${where ? ' · ' : ''}${p.event_date}` : ''}</Text>
+                ) : null}
+              </View>
               <StatusPill status={item.status} />
             </View>
-            <Text style={styles.meta}>{p.location ?? p.city}{p.event_date ? ` · ${p.event_date}` : ''}</Text>
           </Card>
         );
       }}
@@ -371,26 +444,31 @@ function NetworkingDivision({ session }) {
   async function respond(conn, accept) {
     setIncoming((prev) => prev.filter((c) => c.id !== conn.id)); // instant
     const { error } = await respondConnect(conn, accept);
-    if (error) { notify('Could not respond', error.message); load(); return; }
+    if (error) { notify(t('Could not respond'), error.message); load(); return; }
     refreshBadges(); // your own answer writes no notification for you
-    if (accept) notify('Friends 🤝', 'You can now message each other from Social → Chats.');
+    if (accept) notify(t('Friends'), t('You can now message each other from Social, in Chats.'));
   }
 
   return (
     <FlatList
       data={incoming}
       keyExtractor={(c) => c.id}
-      contentContainerStyle={{ padding: 16 }}
+      contentContainerStyle={styles.list}
       ListHeaderComponent={
         incoming.length > 0
-          ? <Text style={styles.legend}>{incoming.length} {incoming.length === 1 ? 'person wants' : 'people want'} to connect with you</Text>
+          ? (
+            <Text style={styles.legend}>
+              {incoming.length === 1 ? t('1 person wants to connect with you') : t('{n} people want to connect with you', { n: incoming.length })}
+            </Text>
+          )
           : null
       }
       ListEmptyComponent={
-        <Text style={styles.empty}>
-          No friend requests right now.{'\n\n'}
-          When someone adds you, they'll appear here to accept or decline. Your conversations are in Social → Chats.
-        </Text>
+        <EmptyState
+          icon="person-add-outline"
+          title={t('No friend requests right now')}
+          text={t("When someone adds you, they'll appear here to accept or decline. Your conversations are in Social, under Chats.")}
+        />
       }
       renderItem={({ item }) => {
         const p = item.requester ?? {};
@@ -399,14 +477,19 @@ function NetworkingDivision({ session }) {
             <TouchableOpacity style={styles.rowTop} onPress={() => p.id && router.push(`/user/${p.id}`)}>
               <Avatar uri={p.avatar_url} name={p.full_name} id={p.id} size={46} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{p.full_name ?? 'Someone'}</Text>
-                <Text style={styles.meta}>{p.university ?? ''}{p.major ? ` · ${p.major}` : ''}</Text>
-                <Text style={styles.meta}>⭐ {p.reliability ?? 75}% · view profile →</Text>
+                <Text style={styles.name}>{p.full_name ?? t('Someone')}</Text>
+                {p.university || p.major ? (
+                  <Text style={styles.meta}>{p.university ?? ''}{p.major ? `${p.university ? ' · ' : ''}${p.major}` : ''}</Text>
+                ) : null}
+                <View style={[styles.metaRow, { marginTop: 3 }]}>
+                  <Reliability value={p.reliability} />
+                </View>
               </View>
+              <Ionicons name="chevron-forward" size={17} color={colors.faint} accessibilityLabel={t('View profile')} />
             </TouchableOpacity>
             <View style={styles.actions}>
-              <Button title="Accept" variant="green" style={{ flex: 1 }} onPress={() => respond(item, true)} />
-              <Button title="Decline" variant="ghost" style={{ flex: 1 }} onPress={() => respond(item, false)} />
+              <Button title={t('Accept')} variant="primary" style={{ flex: 1 }} onPress={() => respond(item, true)} />
+              <Button title={t('Decline')} variant="ghost" style={{ flex: 1 }} onPress={() => respond(item, false)} />
             </View>
           </Card>
         );
@@ -415,48 +498,63 @@ function NetworkingDivision({ session }) {
   );
 }
 
-function SegBtn({ label, on, onPress, n = 0 }) {
+function SegBtn({ icon, label, on, onPress, n = 0 }) {
   return (
-    <TouchableOpacity onPress={onPress} style={[styles.segBtn, on && styles.segBtnOn]}>
+    <TouchableOpacity
+      onPress={onPress}
+      style={[styles.segBtn, on && styles.segBtnOn]}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: !!on }}
+    >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-        <Text style={[styles.segText, on && { color: '#fff' }]}>{label}</Text>
+        <Ionicons name={icon} size={15} color={on ? colors.onBrand : colors.muted} />
+        <Text style={[styles.segText, on && { color: colors.onBrand }]} numberOfLines={1}>{label}</Text>
         <Dot n={n} plain />
       </View>
     </TouchableOpacity>
   );
 }
+
+function Reliability({ value }) {
+  return (
+    <>
+      <Ionicons name="shield-checkmark-outline" size={12} color={colors.brand} />
+      <Text style={styles.meta}> {t('{n}% reliable', { n: value ?? 75 })}</Text>
+    </>
+  );
+}
+
 function StatusPill({ status }) {
   const map = {
-    pending: { t: '🟡 Pending', c: colors.warn, b: colors.warnSoft },
-    accepted: { t: '🟢 Accepted', c: colors.brand, b: colors.brandSoft },
-    rejected: { t: '🔴 Not selected', c: colors.danger, b: '#f6dcd8' },
+    pending: { label: t('Pending'), icon: 'time-outline', c: colors.warn, b: colors.warnSoft },
+    accepted: { label: t('Accepted'), icon: 'checkmark-circle', c: colors.brand, b: colors.brandSoft },
+    rejected: { label: t('Not selected'), icon: 'close-circle-outline', c: colors.danger, b: colors.dangerSoft },
   };
   const s = map[status] ?? map.pending;
-  return <Text style={[styles.pill, { color: s.c, backgroundColor: s.b }]}>{s.t}</Text>;
+  return <Tag label={s.label} icon={s.icon} color={s.c} soft={s.b} />;
 }
 
 const styles = StyleSheet.create({
-  head: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 8 },
-  h1: { fontSize: 22, fontWeight: '800', color: colors.ink },
-  seg: { flexDirection: 'row', backgroundColor: colors.bg, borderRadius: radius.pill, padding: 4, marginTop: 10, borderWidth: 1, borderColor: colors.line },
-  segBtn: { flex: 1, paddingVertical: 9, borderRadius: radius.pill, alignItems: 'center' },
+  head: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  heading: { ...type.h1 },
+  seg: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: radius.pill, padding: 4, marginTop: 12, borderWidth: 1, borderColor: colors.line },
+  segBtn: { flex: 1, paddingVertical: 9, paddingHorizontal: 6, borderRadius: radius.pill, alignItems: 'center' },
   segBtnOn: { backgroundColor: colors.brand },
   segText: { fontSize: 13, fontWeight: '700', color: colors.muted },
-  legend: { fontSize: 12, color: colors.muted, textAlign: 'center', marginBottom: 12 },
-  section: { fontSize: 14, fontWeight: '800', color: colors.ink, marginTop: 6, marginBottom: 10 },
-  event: { fontSize: 12, fontWeight: '700', color: colors.brand, marginBottom: 8 },
+  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  legend: { ...type.small, textAlign: 'center', marginBottom: 12 },
+  event: { ...type.caption, color: colors.brand, textTransform: 'uppercase', marginBottom: 10 },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.brand, fontWeight: '800', fontSize: 18 },
-  name: { fontSize: 15, fontWeight: '700', color: colors.ink, flex: 1 },
+  teamIcon: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  name: { ...type.title, fontSize: 15 },
   meta: { fontSize: 12.5, color: colors.muted, marginTop: 2 },
-  bio: { fontSize: 13, color: colors.ink, marginTop: 10, fontStyle: 'italic' },
-  streak: { fontSize: 13, color: '#c9772a', fontWeight: '700', marginTop: 3 },
-  chatCta: { fontSize: 13, color: colors.brand, fontWeight: '700' },
-  connect: { fontSize: 13, color: colors.brand, fontWeight: '700', textAlign: 'center', marginTop: 10 },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  memberRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.line },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  bio: { fontSize: 13, color: colors.body, marginTop: 10, fontStyle: 'italic', lineHeight: 19 },
+  toggle: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 12 },
+  link: { fontSize: 13, color: colors.brand, fontWeight: '700' },
+  connectBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.line },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.line },
   memberName: { fontSize: 14, fontWeight: '700', color: colors.ink },
-  pill: { fontSize: 11, fontWeight: '700', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999, overflow: 'hidden' },
-  empty: { textAlign: 'center', color: colors.muted, marginTop: 40, paddingHorizontal: 20, lineHeight: 21 },
 });

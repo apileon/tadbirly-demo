@@ -56,7 +56,7 @@ export function SkeletonList({ count = 4, type = 'card', withImage }) {
 }
 
 const styles = StyleSheet.create({
-  block: { backgroundColor: '#dfe5d8', borderRadius: 8 },
+  block: { backgroundColor: colors.line, borderRadius: 8 },
   card: { backgroundColor: colors.card, borderRadius: radius.lg, padding: 16, borderWidth: 1, borderColor: colors.line, marginBottom: 12, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.line, marginBottom: 10 },
 });
