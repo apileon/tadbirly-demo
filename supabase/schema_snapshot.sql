@@ -1,0 +1,55 @@
+-- Tadbirly — live schema snapshot (public schema)
+-- Generated 2026-10-26 from project mezvvxosdcddninqgvjz
+-- Reference only: structure as it exists live, for comparison against migrations 01..32.
+-- Not a pg_dump: no constraints, indexes, RLS policies, functions or triggers.
+
+-- app_config(key, value)
+-- applications(id, post_id, applicant_id, message, status, checked_in, created_at, answers jsonb, checkin_code, accepted_at)
+-- awards(id, badge_id, post_id, recipient_id, awarded_by, note, verified, pinned, created_at, kind, place, points)
+-- badges(id, post_id, organizer_id, name, emoji, description, created_at)
+-- blocks(blocker_id, blocked_id, created_at)
+-- chat_presence(chat_id, user_id, seen_at)
+-- chats(id, post_id, participant_id, organizer_id, created_at)
+-- coach_usage(user_id, day, count)
+-- connections(id, requester_id, target_id, status, created_at)
+-- digest_sent(user_id, week_start, sent_at)
+-- event_messages(id, post_id, sender_id, body, created_at)
+-- event_reminders_sent(post_id, user_id, kind, sent_at)
+-- event_reviews(id, post_id, reviewer_id, rating, comment, created_at)
+-- event_team_members(post_id, team_id, user_id, created_at)
+-- event_teams(id, post_id, name, seed, group_no, created_at)
+-- matches(id, post_id, stage, group_no, round, slot, team_a, team_b, src_a, src_b,
+--         score_a, score_b, winner, status, next_match_id, next_slot, created_at)
+-- messages(id, chat_id, sender_id, body, created_at, read_at)
+-- news_comments(id, news_id, author_id, body, created_at)
+-- news_likes(news_id, user_id, created_at)
+-- news_posts(id, author_id, body, image_url, created_at)
+-- notifications(id, user_id, type, title, body, link, read_at, created_at,
+--               collapse_key, pushed_at, push_request_id, telegram_request_id)
+-- opportunity_submissions(id, submitted_by, title, url, details, event_date, status,
+--                         created_at, reviewed_by, reviewed_at)
+-- post_views(post_id, user_id, day)
+-- posts(id, author_id, kind, title, description, category, city, location, event_date,
+--       deadline, spots, looking_for, status, boosted, created_at, moderation, team_mode,
+--       team_min, cover_url, start_time, language, is_free, fee, is_online, lat, lng,
+--       questions jsonb, views, team_size, format, group_count, advance_per_group,
+--       tournament_stage)
+-- profiles(id, full_name, role, city, university, faculty, major, academic_year, languages[],
+--          skills[], reliability, is_pro, verified_student, posts_this_month, created_at, bio,
+--          honors[], streak_count, last_active, ielts, sat, act, milliy, telegram, phone,
+--          linkedin, avatar_url, cover_url, is_admin, terms_accepted_at, interests[],
+--          onboarded, locale)
+-- reports(id, reporter_id, post_id, reported_user_id, reason, created_at, target_type,
+--         target_id, details, status, resolved_at, resolved_by, admin_note)
+-- saved_posts(user_id, post_id, created_at)
+-- team_applications(id, post_id, team_id, applied_by, message, status, created_at)
+-- team_members(id, team_id, user_id, status, created_at)
+-- teams(id, owner_id, name, competition, description, spots, created_at, status,
+--       approved_by, approved_at, skills_needed[])
+-- telegram_link_codes(code, user_id, created_at)
+-- telegram_links(user_id, chat_id, username, also_push, linked_at)
+-- venue_bookings(id, venue_id, requester_id, event_date, status, created_at)
+-- venues(id, owner_id, name, type, city, area_m2, capacity, price_per_day, amenities[],
+--        verified, lat, lng, created_at)
+
+-- 37 tables total.
