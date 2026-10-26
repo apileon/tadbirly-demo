@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, RefreshControl, Modal, Image, ScrollView, Switch, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,20 +6,19 @@ import { useRouter } from 'expo-router';
 import { useCachedQuery } from '../../lib/cache';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
-import { colors, radius, type, shadow, EVENT_TYPES, EVENT_TYPE_KEYS, EVENT_LANGUAGES } from '../../lib/theme';
-import { unreadCount } from '../../lib/notifications';
-import { Logo, Wordmark, IconButton, Chip, EmptyState, Button } from '../../components/ui';
+import { colors, radius, type, shadow, layout, EVENT_TYPES, EVENT_TYPE_KEYS, EVENT_LANGUAGES } from '../../lib/theme';
+import { getBlockedIds } from '../../lib/moderation';
+import { Logo, Wordmark, IconButton, Chip, EmptyState, Button, Segmented } from '../../components/ui';
 import { SkeletonList } from '../../components/Skeleton';
 import NotifyNudge from '../../components/NotifyNudge';
 import { useBadges } from '../../lib/badges';
-import { useSavedIds, toggleSaved, scorePost } from '../../lib/discover';
+import { useSavedIds, toggleSaved, scorePost, seedPost } from '../../lib/discover';
 import EventCard, { daysUntil, todayInTashkent } from '../../components/EventCard';
 import { t, dateLocale } from '../../lib/i18n';
 
 const FIXED = EVENT_TYPE_KEYS.filter((k) => k !== 'Other');
-// Feed column width. On a phone it fills the screen; on a laptop it stays a
-// narrow column in the middle instead of stretching across the monitor.
-const MAX_W = 520;
+// Feed column width: the app-wide content column (lib/theme layout).
+const MAX_W = layout.contentMax;
 const iconFor = (key) => EVENT_TYPES.find((x) => x.key === key)?.icon;
 
 const NO_FILTERS = { category: 'all', city: 'all', language: 'all', freeOnly: false, onlineOnly: false, closingSoon: false };
@@ -38,8 +37,13 @@ export default function Feed() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [search, setSearch] = useState('');
   const savedIds = useSavedIds();
+  // "For you" ranks with the saved set as it was when the list was built, so
+  // tapping a bookmark doesn't reshuffle the whole feed under your finger.
+  const savedRef = useRef(savedIds);
+  savedRef.current = savedIds;
 
-  // All four requests go out at once instead of one after another.
+  // Requests go out at once. Blocked ids come from lib/moderation's shared
+  // cache, and the bell count from the badge context — no duplicate queries.
   const fetchFeed = useCallback(async () => {
     const today = todayInTashkent();
     // Same day: earlier start first, events without a time after the timed
@@ -57,30 +61,25 @@ export default function Feed() {
       if (byStartTime) q = q.order('start_time', { ascending: true, nullsFirst: false });
       return q.order('created_at', { ascending: false });
     };
-    const [postsRes, blockedRes, rankRes, unread] = await Promise.all([
+    const [postsRes, blockedSet, rankRes] = await Promise.all([
       postsQuery(true).then((res) => (res.error ? postsQuery(false) : res)),
-      supabase.from('blocks').select('blocked_id'),
+      getBlockedIds().catch(() => new Set()),
       supabase.rpc('my_points'),
-      unreadCount(),
     ]);
-    const blockedSet = new Set((blockedRes.data ?? []).map((b) => b.blocked_id));
     return {
       posts: (postsRes.data ?? []).filter((p) => !blockedSet.has(p.author_id)),
       rank: rankRes.data && rankRes.data[0] ? rankRes.data[0] : null,
-      unread,
     };
   }, []);
 
-  // Keyed per user — the payload carries your own rank and unread count.
+  // Keyed per user — the payload carries your own rank.
   const { data, loading: first, refreshing, refresh } = useCachedQuery(uid ? `feed:${uid}` : null, fetchFeed);
   const posts = data?.posts ?? [];
   const rank = data?.rank ?? null;
-  // Live count from the shared badge context once it has loaded; the cached
-  // payload only covers first paint, so the bell isn't briefly empty. (With
-  // `||`, a live 0 fell through to the cached number — read notifications
-  // kept a stale badge on the bell.)
+  // The bell reads the shared badge context (one source for every dot).
   const { badges } = useBadges();
-  const unread = badges.loaded ? badges.notifications : (data?.unread ?? 0);
+  const unread = badges.notifications ?? 0;
+  const ranked = !!(rank && rank.points > 0 && rank.place);
 
   // Cities that actually have events, most common first.
   const cities = useMemo(() => {
@@ -112,10 +111,16 @@ export default function Feed() {
     if (mode !== 'foryou') return list;
     // Stable: equal scores keep the date order the server gave.
     return list
-      .map((p, i) => ({ p, i, s: scorePost(p, profile, savedIds) }))
+      .map((p, i) => ({ p, i, s: scorePost(p, profile, savedRef.current) }))
       .sort((a, b) => b.s - a.s || a.i - b.i)
       .map((x) => x.p);
-  }, [posts, search, filters, mode, profile, savedIds]);
+  }, [posts, search, filters, mode, profile]);
+
+  // Stable, so memoised cards only re-render when their own props change.
+  const openPost = useCallback((p) => { seedPost(p); router.push(`/post/${p.id}`); }, [router]);
+  const renderItem = useCallback(({ item }) => (
+    <EventCard post={item} saved={savedIds.has(item.id)} onSave={toggleSaved} onPress={openPost} />
+  ), [savedIds, openPost]);
 
   const setF = (patch) => setFilters((f) => ({ ...f, ...patch }));
 
@@ -127,17 +132,21 @@ export default function Feed() {
             <Logo size={34} />
             <Wordmark size={21} />
           </View>
-          {/* Ranking */}
-          <TouchableOpacity
-            style={styles.rankPill}
-            onPress={() => router.push('/leaderboard')}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel={t('Ranking')}
-          >
-            <Ionicons name="trophy" size={14} color={colors.lime} />
-            <Text style={styles.rankNum}>{rank && rank.points > 0 ? `#${rank.place}` : '—'}</Text>
-          </TouchableOpacity>
+          {/* Ranking: your place once you have points, otherwise just the way in. */}
+          {ranked ? (
+            <TouchableOpacity
+              style={styles.rankPill}
+              onPress={() => router.push('/leaderboard')}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={t('Ranking')}
+            >
+              <Ionicons name="trophy" size={14} color={colors.lime} />
+              <Text style={styles.rankNum}>{`#${rank.place}`}</Text>
+            </TouchableOpacity>
+          ) : (
+            <IconButton icon="trophy-outline" label={t('Ranking')} onPress={() => router.push('/leaderboard')} />
+          )}
           <IconButton icon="bookmark-outline" label={t('Saved events')} onPress={() => router.push('/saved')} />
           <IconButton icon="notifications-outline" label={t('Notifications')} badge={unread} onPress={() => router.push('/notifications')} />
         </View>
@@ -158,13 +167,13 @@ export default function Feed() {
           ) : null}
         </View>
         {/* For you / Upcoming */}
-        <View style={styles.segment}>
-          {[['foryou', t('For you')], ['upcoming', t('Upcoming')]].map(([k, label]) => (
-            <TouchableOpacity key={k} onPress={() => setMode(k)} style={[styles.segBtn, mode === k && styles.segOn]} activeOpacity={0.85}>
-              <Text style={[styles.segText, mode === k && styles.segTextOn]}>{label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <Segmented
+          tone="quiet"
+          style={{ marginTop: 10 }}
+          value={mode}
+          onChange={setMode}
+          options={[{ key: 'foryou', label: t('For you') }, { key: 'upcoming', label: t('Upcoming') }]}
+        />
       </View>
 
       {/* Filter bar: Filters (opens the sheet) · All · categories, scrolls sideways. */}
@@ -198,6 +207,7 @@ export default function Feed() {
       ) : (
         <FlatList
           data={visible}
+          extraData={savedIds}
           keyExtractor={(p) => p.id}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.brand} />}
@@ -222,14 +232,13 @@ export default function Feed() {
               <EmptyState icon={iconFor(filters.category) ?? 'options-outline'} title={t('No events match these filters')} text={t('Check back soon, or browse everything.')} action={t('Clear filters')} onAction={() => setFilters(NO_FILTERS)} />
             )
           }
-          renderItem={({ item }) => (
-            <EventCard
-              post={item}
-              saved={savedIds.has(item.id)}
-              onSave={() => toggleSaved(item.id)}
-              onPress={() => router.push(`/post/${item.id}`)}
-            />
+          ListFooterComponent={profile?.role === 'organizer' ? null : (
+            <TouchableOpacity style={styles.suggestRow} onPress={() => router.push('/suggest')} activeOpacity={0.7}>
+              <Ionicons name="bulb-outline" size={15} color={colors.muted} />
+              <Text style={styles.suggestText}>{t('Know an opportunity? Suggest it')}</Text>
+            </TouchableOpacity>
           )}
+          renderItem={renderItem}
         />
       )}
     </SafeAreaView>
@@ -309,11 +318,6 @@ const styles = StyleSheet.create({
   rankNum: { color: colors.bg, fontSize: 13.5, fontWeight: '800' },
   search: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.bg, borderRadius: radius.md, paddingHorizontal: 14, height: 44 },
   searchInput: { flex: 1, fontSize: 14.5, color: colors.ink, height: '100%', outlineStyle: 'none' },
-  segment: { flexDirection: 'row', marginTop: 10, backgroundColor: colors.bg, borderRadius: radius.md, padding: 3 },
-  segBtn: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: radius.sm },
-  segOn: { backgroundColor: colors.card, ...shadow.sm },
-  segText: { fontSize: 13.5, fontWeight: '600', color: colors.muted },
-  segTextOn: { color: colors.ink },
   inner: { width: '100%', maxWidth: MAX_W, alignSelf: 'center', padding: 16 },
   list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: MAX_W, alignSelf: 'center' },
   filterBar: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 2 },
@@ -327,4 +331,6 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, marginTop: 6, borderTopWidth: 1, borderTopColor: colors.line },
   toggleText: { flex: 1, fontSize: 14.5, color: colors.ink, fontWeight: '500' },
+  suggestRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14 },
+  suggestText: { fontSize: 13, color: colors.muted, fontWeight: '600' },
 });

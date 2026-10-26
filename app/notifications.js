@@ -1,9 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SkeletonList } from '../components/Skeleton';
-import { useRouter, useFocusEffect, useSegments } from 'expo-router';
-import { colors, radius, type } from '../lib/theme';
+import { useRouter, useSegments } from 'expo-router';
+import { useCachedQuery } from '../lib/cache';
+import { useAuth } from '../lib/auth';
+import { colors, radius, type, column } from '../lib/theme';
 import { listNotifications, markRead, markAllRead, clearAll } from '../lib/notifications';
 import { timeAgo } from '../lib/news';
 import { confirmAsync, notify } from '../lib/notify';
@@ -40,15 +42,15 @@ export default function Notifications() {
   const router = useRouter();
   const segments = useSegments();
   const { refreshBadges } = useBadges();
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { session } = useAuth();
+  const uid = session?.user?.id;
 
-  const load = useCallback(async () => {
-    setRows(await listNotifications());
-    setLoading(false);
-  }, []);
-
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // Cached per user, so opening the bell again is instant (lib/cache);
+  // a fresh copy replaces it as soon as it arrives.
+  const fetchRows = useCallback(() => listNotifications(), []);
+  const { data, loading, setData, refresh: load } = useCachedQuery(uid ? `notifications:${uid}` : null, fetchRows);
+  const rows = data ?? [];
+  const setRows = useCallback((fn) => setData((prev) => (typeof fn === 'function' ? fn(prev ?? []) : fn)), [setData]);
 
   async function open(n) {
     if (!n.read_at) {
@@ -138,11 +140,11 @@ export default function Notifications() {
 
 const styles = StyleSheet.create({
   bar: { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.line },
-  barInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 11, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  barInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 11, ...column },
   barText: { ...type.label, color: colors.muted },
   barBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   barBtnText: { fontSize: 13, color: colors.brand, fontWeight: '700' },
-  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 40, ...column },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 14, marginBottom: 10 },
   unread: { borderColor: colors.brand, backgroundColor: colors.brandSoft },
   icon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },

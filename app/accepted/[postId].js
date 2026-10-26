@@ -4,8 +4,8 @@ import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, shadow } from '../../lib/theme';
-import { Button, Avatar, EmptyState } from '../../components/ui';
+import { colors, radius, type, shadow, column } from '../../lib/theme';
+import { Button, Avatar, EmptyState, reliabilityText } from '../../components/ui';
 import { t } from '../../lib/i18n';
 
 // Organizer-only, like Applicants / Medals / End event. Participants never
@@ -22,15 +22,15 @@ export default function AcceptedParticipants() {
   const [rows, setRows] = useState([]);
 
   const load = useCallback(async () => {
-    const { data: p } = await supabase.from('posts').select('title, author_id').eq('id', postId).single();
-    if (p && p.author_id === uid) {
-      const { data } = await supabase
+    const [{ data: p }, { data }] = await Promise.all([
+      supabase.from('posts').select('title, author_id').eq('id', postId).single(),
+      supabase
         .from('applications')
         .select('applicant:profiles!applications_applicant_id_fkey(id, full_name, university, major, reliability, verified_student)')
         .eq('post_id', postId)
-        .eq('status', 'accepted');
-      setRows((data ?? []).map((r) => r.applicant).filter(Boolean));
-    }
+        .eq('status', 'accepted'),
+    ]);
+    setRows(p && p.author_id === uid ? (data ?? []).map((r) => r.applicant).filter(Boolean) : []);
     setPost(p ?? null);
   }, [postId, uid]);
 
@@ -88,7 +88,7 @@ export default function AcceptedParticipants() {
             ) : null}
             <View style={styles.relRow}>
               <Ionicons name="shield-checkmark-outline" size={13} color={colors.brand} />
-              <Text style={styles.rel}>{t('{n}% reliable', { n: item.reliability ?? 75 })}</Text>
+              <Text style={styles.rel}>{reliabilityText(item.reliability, { format: '{n}% reliable' })}</Text>
             </View>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.faint} accessibilityLabel={t('Profile')} />
@@ -99,7 +99,7 @@ export default function AcceptedParticipants() {
 }
 
 const styles = StyleSheet.create({
-  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 40, ...column },
   gate: { padding: 24, alignItems: 'center', width: '100%', maxWidth: 520, alignSelf: 'center' },
   head: { marginBottom: 14 },
   title: { ...type.h2 },

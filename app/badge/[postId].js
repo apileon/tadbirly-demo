@@ -5,7 +5,7 @@ import { notify, confirmAsync } from '../../lib/notify';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, shadow, AWARD_KINDS, awardMeta } from '../../lib/theme';
+import { colors, radius, type, shadow, AWARD_KINDS, awardMeta, column } from '../../lib/theme';
 import { Button, Avatar, EmptyState, SectionHeader, TextField } from '../../components/ui';
 import { t } from '../../lib/i18n';
 
@@ -276,7 +276,7 @@ function AwardRow({ person, existing, onGive, onRevoke }) {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 50, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 50, ...column },
   event: { ...type.h1, marginBottom: 14 },
   card: {
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg,

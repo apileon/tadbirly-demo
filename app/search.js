@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -8,25 +8,42 @@ import { colors, radius } from '../lib/theme';
 import { TextField, EmptyState, Avatar } from '../components/ui';
 import { t } from '../lib/i18n';
 
+const DEBOUNCE_MS = 250;
+
+// ilike treats % and _ as wildcards; a name with them should match literally.
+const likeEscape = (s) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
 export default function SearchUsers() {
-  const { session } = useAuth();
+  const { uid } = useAuth();
   const router = useRouter();
   const [q, setQ] = useState('');
   const [rows, setRows] = useState([]);
   const [searched, setSearched] = useState(false);
+  const [pending, setPending] = useState(false);
+  // Only the newest query may write the results: a slower reply to an older
+  // one is dropped instead of overwriting what's on screen.
+  const latest = useRef(0);
 
-  async function run(text) {
-    setQ(text);
-    if (text.trim().length < 2) { setRows([]); setSearched(false); return; }
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, full_name, university, major, reliability, verified_student')
-      .ilike('full_name', `%${text.trim()}%`)
-      .neq('id', session.user.id)
-      .limit(30);
-    setRows(data ?? []);
-    setSearched(true);
-  }
+  useEffect(() => {
+    const text = q.trim();
+    const id = ++latest.current;
+    if (text.length < 2) { setRows([]); setSearched(false); setPending(false); return undefined; }
+    setPending(true);
+    // One request once typing pauses, not one per keystroke.
+    const timer = setTimeout(async () => {
+      let query = supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, university, major, reliability, verified_student')
+        .ilike('full_name', `%${likeEscape(text)}%`);
+      if (uid) query = query.neq('id', uid);
+      const { data, error } = await query.limit(30);
+      if (id !== latest.current) return;
+      if (!error) setRows(data ?? []);
+      setSearched(true);
+      setPending(false);
+    }, DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [q, uid]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -35,7 +52,7 @@ export default function SearchUsers() {
           icon="search-outline"
           style={styles.searchWrap}
           value={q}
-          onChangeText={run}
+          onChangeText={setQ}
           placeholder={t('Search people by name…')}
           accessibilityLabel={t('Search people by name')}
           autoFocus
@@ -46,7 +63,9 @@ export default function SearchUsers() {
         keyExtractor={(u) => u.id}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          searched ? (
+          pending && !rows.length ? (
+            <ActivityIndicator color={colors.brand} style={{ marginTop: 32 }} />
+          ) : searched ? (
             <EmptyState icon="person-outline" title={t('No one found')} text={t('Try another name.')} />
           ) : (
             <EmptyState icon="search-outline" text={t('Type at least 2 letters to search students.')} />

@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
-import { Text, TouchableOpacity, View, ActivityIndicator, StyleSheet, Image, TextInput } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { Text, TouchableOpacity, View, ActivityIndicator, StyleSheet, Image, TextInput, Animated } from 'react-native';
+import { springTo } from './Motion';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, type, shadow, isDark, avatarColor, initialsOf } from '../lib/theme';
+import { t } from '../lib/i18n';
+import Dot from './Dot';
 
 // The Tadbirly mark: two offset T's, lime behind and deep green in front.
 // Drawn with plain views so it stays crisp at any size and needs no image.
@@ -232,6 +235,146 @@ export function Screen({ children, style }) {
   return <View style={[styles.screen, style]}>{children}</View>;
 }
 
+// Segmented control (Feed: For you / Upcoming, Portal, Social).
+//   options: [{ key, label, icon?, n? }]  — n shows a red dot when > 0
+//   tone: 'brand' (pill, green when selected) | 'quiet' (soft, card when selected)
+export function Segmented({ options, value, onChange, tone = 'brand', style }) {
+  const quiet = tone === 'quiet';
+  const index = Math.max(0, options.findIndex((o) => o.key === value));
+  // The highlight is one pill that glides to the selected option.
+  const pad = quiet ? 3 : 4;
+  const [inner, setInner] = useState(0);
+  const x = useRef(new Animated.Value(0)).current;
+  const segW = inner && options.length ? inner / options.length : 0;
+  const placed = useRef(false);
+  useEffect(() => {
+    if (!segW) return;
+    if (!placed.current) { x.setValue(index * segW); placed.current = true; return; }
+    springTo(x, index * segW);
+  }, [index, segW, x]);
+
+  return (
+    <View
+      style={[quiet ? styles.segQuiet : styles.seg, style]}
+      accessibilityRole="tablist"
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width - pad * 2 - (quiet ? 0 : 2);   // minus padding (+ border)
+        if (w > 0 && Math.abs(w - inner) > 0.5) setInner(w);
+      }}
+    >
+      {segW ? (
+        <Animated.View
+          style={[
+            quiet ? styles.segOnQuiet : styles.segOn,
+            styles.segThumb,
+            { top: pad, bottom: pad, left: pad, width: segW, borderRadius: quiet ? radius.sm : radius.pill, transform: [{ translateX: x }] },
+          ]}
+        />
+      ) : null}
+      {options.map((o) => {
+        const on = o.key === value;
+        const fg = quiet ? (on ? colors.ink : colors.muted) : (on ? colors.onBrand : colors.muted);
+        return (
+          <TouchableOpacity
+            key={o.key}
+            onPress={() => onChange?.(o.key)}
+            activeOpacity={0.85}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            // Before the first layout there's no gliding pill yet: show the
+            // selected one the old way for that single frame.
+            style={[quiet ? styles.segBtnQuiet : styles.segBtn, on && !segW && (quiet ? styles.segOnQuiet : styles.segOn)]}
+          >
+            <View style={styles.segRow}>
+              {o.icon ? <Ionicons name={o.icon} size={15} color={fg} /> : null}
+              <Text style={[styles.segText, { color: fg }]} numberOfLines={1}>{o.label}</Text>
+              <Dot n={o.n ?? 0} plain />
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+// Application status. `viewer="organizer"` says "Rejected"; the applicant
+// sees the gentler "Not selected".
+export function StatusPill({ status, viewer }) {
+  const map = {
+    pending: { label: t('Pending'), icon: 'time-outline', c: colors.warn, b: colors.warnSoft },
+    accepted: { label: t('Accepted'), icon: 'checkmark-circle', c: colors.accent, b: colors.accentSoft },
+    rejected: {
+      label: viewer === 'organizer' ? t('Rejected') : t('Not selected'),
+      icon: 'close-circle-outline', c: colors.danger, b: colors.dangerSoft,
+    },
+  };
+  const s = map[status] ?? map.pending;
+  return <Tag label={s.label} icon={s.icon} color={s.c} soft={s.b} />;
+}
+
+// − 4 + number picker for small counts (players per team, groups…).
+export function Stepper({ value, min = 0, max = 99, onChange, label, style }) {
+  const n = Number(value) || 0;
+  const step = (d) => onChange?.(Math.min(max, Math.max(min, n + d)));
+  return (
+    <View style={[styles.stepper, style]}>
+      {label ? <Text style={styles.stepperLabel} numberOfLines={2}>{label}</Text> : null}
+      <View style={styles.stepperBox}>
+        <TouchableOpacity onPress={() => step(-1)} disabled={n <= min} style={[styles.stepperBtn, n <= min && { opacity: 0.35 }]}
+          accessibilityRole="button" accessibilityLabel={`${label ?? ''} −`} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <Ionicons name="remove" size={18} color={colors.ink} />
+        </TouchableOpacity>
+        <Text style={styles.stepperValue} accessibilityLiveRegion="polite">{n}</Text>
+        <TouchableOpacity onPress={() => step(1)} disabled={n >= max} style={[styles.stepperBtn, n >= max && { opacity: 0.35 }]}
+          accessibilityRole="button" accessibilityLabel={`${label ?? ''} +`} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <Ionicons name="add" size={18} color={colors.ink} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// A white card with a small uppercase heading.
+export function Section({ title, icon, children, style, titleStyle }) {
+  return (
+    <View style={[styles.sectionCard, style]}>
+      {title ? (
+        <View style={styles.sectionCardHead}>
+          {icon ? <Ionicons name={icon} size={14} color={colors.muted} /> : null}
+          <Text style={[styles.sectionTitle, titleStyle]}>{title}</Text>
+        </View>
+      ) : null}
+      {children}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+//  Reliability. Everyone starts at 75% and only verified events/awards raise
+//  it, so a bare 75% says nothing — it reads "New" until there is history.
+//  hasHistory: pass true when the screen knows of verified events/awards.
+// ---------------------------------------------------------------------------
+export const DEFAULT_RELIABILITY = 75;
+export function isNewReliability(value, hasHistory) {
+  if (hasHistory) return false;
+  return value == null || !(Number(value) > DEFAULT_RELIABILITY);
+}
+// "New" or "82%" — or the given pattern ("{n}% reliable") for the number.
+export function reliabilityText(value, { hasHistory, format } = {}) {
+  if (isNewReliability(value, hasHistory)) return t('New');
+  const n = Math.round(Number(value ?? DEFAULT_RELIABILITY));
+  return format ? t(format, { n }) : `${n}%`;
+}
+// Inline shield + text, for meta rows.
+export function Reliability({ value, hasHistory, format, icon = 'shield-checkmark-outline', size = 12, color = colors.brand, textStyle, style }) {
+  return (
+    <View style={[styles.relRow, style]}>
+      <Ionicons name={icon} size={size} color={color} />
+      <Text style={[styles.relText, textStyle]}>{reliabilityText(value, { hasHistory, format })}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   btn: {
     borderRadius: radius.md,
@@ -291,4 +434,22 @@ const styles = StyleSheet.create({
     ...shadow.sm,
   },
   screen: { flex: 1, backgroundColor: colors.bg },
+  seg: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: radius.pill, padding: 4, borderWidth: 1, borderColor: colors.line },
+  segBtn: { flex: 1, paddingVertical: 9, paddingHorizontal: 6, borderRadius: radius.pill, alignItems: 'center' },
+  segOn: { backgroundColor: colors.brand },
+  segQuiet: { flexDirection: 'row', backgroundColor: colors.bg, borderRadius: radius.md, padding: 3 },
+  segBtnQuiet: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: radius.sm },
+  segOnQuiet: { backgroundColor: colors.card, ...shadow.sm },
+  segRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  segThumb: { position: 'absolute', pointerEvents: 'none' },
+  segText: { fontSize: 13.5, fontWeight: '700' },
+  sectionCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 16, marginBottom: 12 },
+  sectionCardHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepperLabel: { ...type.label, flex: 1 },
+  stepperBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radius.pill },
+  stepperBtn: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  stepperValue: { minWidth: 28, textAlign: 'center', fontSize: 16, fontWeight: '800', color: colors.ink },
+  relRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  relText: { fontSize: 12.5, color: colors.muted },
 });

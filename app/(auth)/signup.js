@@ -4,13 +4,16 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { Button, Logo, TextField } from '../../components/ui';
 import { colors, radius, type, shadow } from '../../lib/theme';
 import { LegalDocument, POLICY_UPDATED } from '../legal';
-import { t } from '../../lib/i18n';
+import { t, useLocale, LanguageSwitch } from '../../lib/i18n';
 
 export default function SignUp() {
+  useLocale(); // re-render in place when the language changes (typed text stays)
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,12 +22,18 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
+  // Tapped "Create account" without ticking the box: point at the box.
+  const [needAgree, setNeedAgree] = useState(false);
 
   async function signUp() {
-    setErr(''); setMsg('');
+    setErr(''); setMsg(''); setNeedAgree(false);
     if (!name.trim()) { setErr(t('Add your name.')); return; }
     if (!email.trim() || password.length < 6) { setErr(t('Enter an email and a password of at least 6 characters.')); return; }
-    if (!agreed) { setErr(t('Please agree to the Terms and Community Rules to create an account.')); return; }
+    if (!agreed) {
+      setNeedAgree(true);
+      setErr(t('Please agree to the Terms and Community Rules to create an account.'));
+      return;
+    }
     setLoading(true);
     const acceptedAt = new Date().toISOString();
     const { data, error } = await supabase.auth.signUp({
@@ -86,13 +95,13 @@ export default function SignUp() {
 
       <View style={styles.agreeRow}>
         <TouchableOpacity
-          onPress={() => { setAgreed((v) => !v); setErr(''); }}
+          onPress={() => { setAgreed((v) => !v); setErr(''); setNeedAgree(false); }}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: agreed }}
           accessibilityLabel={t('I agree to the Terms and Community Rules')}
         >
-          <View style={[styles.box, agreed && styles.boxOn]}>
+          <View style={[styles.box, agreed && styles.boxOn, needAgree && !agreed && styles.boxErr]}>
             {agreed ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
           </View>
         </TouchableOpacity>
@@ -122,7 +131,9 @@ export default function SignUp() {
         </View>
       ) : null}
 
-      <Button title={t('Create account')} onPress={signUp} loading={loading} disabled={!agreed} style={{ marginTop: 18 }} />
+      {/* Always tappable: unticked, it explains what's missing instead of
+          sitting greyed out with no reason given. */}
+      <Button title={t('Create account')} onPress={signUp} loading={loading} style={{ marginTop: 18 }} />
       </View>
 
       <Text style={styles.foot}>
@@ -131,6 +142,7 @@ export default function SignUp() {
       </Text>
       </View>
       </ScrollView>
+      <LanguageSwitch style={[styles.lang, { top: insets.top + 12 }]} />
 
       {/* Shown here instead of navigating to /legal, so it works before login. */}
       <Modal visible={showTerms} animationType="slide" onRequestClose={() => setShowTerms(false)}>
@@ -147,7 +159,7 @@ export default function SignUp() {
               title={agreed ? t('Close') : t('I agree')}
               variant="green"
               style={{ marginTop: 8 }}
-              onPress={() => { setAgreed(true); setErr(''); setShowTerms(false); }}
+              onPress={() => { setAgreed(true); setErr(''); setNeedAgree(false); setShowTerms(false); }}
             />
           </ScrollView>
         </View>
@@ -158,7 +170,8 @@ export default function SignUp() {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20, paddingVertical: 40 },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20, paddingTop: 64, paddingBottom: 40 },
+  lang: { position: 'absolute', right: 16 },
   column: { width: '100%', maxWidth: 420, alignSelf: 'center' },
   brandBlock: { alignItems: 'center', marginBottom: 24 },
   panel: {
@@ -168,6 +181,7 @@ const styles = StyleSheet.create({
   agreeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 18 },
   box: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.lineStrong, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, marginTop: 1 },
   boxOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  boxErr: { borderColor: colors.danger, backgroundColor: colors.dangerSoft },
   agreeText: { flex: 1, fontSize: 13.5, color: colors.body, lineHeight: 20 },
   foot: { textAlign: 'center', marginTop: 22, color: colors.muted, fontSize: 14 },
   link: { color: colors.brand, fontWeight: '700' },

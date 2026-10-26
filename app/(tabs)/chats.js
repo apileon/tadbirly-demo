@@ -6,8 +6,8 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useCachedQuery, writeCache } from '../../lib/cache';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type } from '../../lib/theme';
-import { Button, Card, Avatar, EmptyState } from '../../components/ui';
+import { colors, radius, type, column } from '../../lib/theme';
+import { Button, Card, Avatar, EmptyState, Segmented } from '../../components/ui';
 import { confirmAsync, notify } from '../../lib/notify';
 import { timeAgo } from '../../lib/news';
 import { sharedStreak } from '../../lib/social';
@@ -15,6 +15,7 @@ import { SkeletonList } from '../../components/Skeleton';
 import { useBadges, unreadByChat } from '../../lib/badges';
 import Dot from '../../components/Dot';
 import { t } from '../../lib/i18n';
+import { Pager } from '../../components/Motion';
 
 export default function Social() {
   const [tab, setTab] = useState('chats');
@@ -23,14 +24,21 @@ export default function Social() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
       <View style={styles.head}>
         <Text style={styles.heading}>{t('Social')}</Text>
-        <View style={styles.seg}>
-          <SegBtn label={t('Chats')} icon="chatbubbles-outline" on={tab === 'chats'} onPress={() => setTab('chats')} n={badges.messages} />
-          <SegBtn label={t('News')} icon="newspaper-outline" on={tab === 'news'} onPress={() => setTab('news')} />
-        </View>
+        <Segmented
+          style={{ marginTop: 10 }}
+          value={tab}
+          onChange={setTab}
+          options={[
+            { key: 'chats', icon: 'chatbubbles-outline', label: t('Chats'), n: badges.messages },
+            { key: 'news', icon: 'newspaper-outline', label: t('News') },
+          ]}
+        />
       </View>
-      {/* Both stay mounted so switching is instant — no reload, no flicker. */}
-      <View style={{ flex: 1, display: tab === 'chats' ? 'flex' : 'none' }}><ChatsDivision /></View>
-      <View style={{ flex: 1, display: tab === 'news' ? 'flex' : 'none' }}><NewsDivision /></View>
+      {/* Both stay mounted (no reload); they slide, and you can swipe between them. */}
+      <Pager keys={['chats', 'news']} value={tab} onChange={setTab}>
+        <ChatsDivision />
+        <NewsDivision />
+      </Pager>
     </SafeAreaView>
   );
 }
@@ -38,33 +46,41 @@ export default function Social() {
 /* ================= CHATS ================= */
 function ChatsDivision() {
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const uid = session?.user?.id;
+  const isOrg = profile?.role === 'organizer';
 
   const fetchChats = useCallback(async () => {
     if (!uid) return [];
-    const { data } = await supabase
-      .from('chats')
-      .select('*, post:posts(title, kind), participant:profiles!chats_participant_id_fkey(full_name, avatar_url), organizer:profiles!chats_organizer_id_fkey(full_name, avatar_url)')
-      .or(`participant_id.eq.${uid},organizer_id.eq.${uid}`)
-      .order('created_at', { ascending: false });
+    // Round 1, together: the chats, my own verified events, and the unread
+    // count + last activity per chat (so the list reads like a messaging app:
+    // newest conversation on top, unread ones marked).
+    const [{ data }, { data: myAw }, unread] = await Promise.all([
+      supabase
+        .from('chats')
+        .select('*, post:posts(title, kind), participant:profiles!chats_participant_id_fkey(full_name, avatar_url), organizer:profiles!chats_organizer_id_fkey(full_name, avatar_url)')
+        .or(`participant_id.eq.${uid},organizer_id.eq.${uid}`)
+        .order('created_at', { ascending: false }),
+      supabase.from('awards').select('post_id').eq('recipient_id', uid).eq('verified', true),
+      unreadByChat().catch(() => ({})),
+    ]);
     const list = data ?? [];
 
-    // Shared-event streak with each person, same as Portal → Network.
+    // Round 2, only if I have any verified events: the shared-event streak
+    // with each person (with none, every streak is 0 anyway).
     const otherId = (c) => (c.organizer_id === uid ? c.participant_id : c.organizer_id);
-    const ids = list.map(otherId).filter(Boolean);
-    const { data: aw } = await supabase
-      .from('awards')
-      .select('recipient_id, post_id')
-      .in('recipient_id', [uid, ...ids])
-      .eq('verified', true);
+    const ids = [...new Set(list.map(otherId).filter(Boolean))];
+    const mine = (myAw ?? []).map((r) => r.post_id);
     const byUser = {};
-    (aw ?? []).forEach((r) => { (byUser[r.recipient_id] ??= []).push(r.post_id); });
-    const mine = byUser[uid] ?? [];
-
-    // Unread count + last activity per chat, so the list reads like a
-    // messaging app: newest conversation on top, unread ones marked.
-    const unread = await unreadByChat();
+    if (mine.length && ids.length) {
+      const { data: aw } = await supabase
+        .from('awards')
+        .select('recipient_id, post_id')
+        .in('recipient_id', ids)
+        .in('post_id', mine)
+        .eq('verified', true);
+      (aw ?? []).forEach((r) => { (byUser[r.recipient_id] ??= []).push(r.post_id); });
+    }
 
     return list
       .map((c) => ({
@@ -123,7 +139,9 @@ function ChatsDivision() {
         <EmptyState
           icon="chatbubbles-outline"
           title={t('No chats yet')}
-          text={t('Add a friend, or message an applicant from Review applicants.')}
+          text={isOrg
+            ? t('Add a friend, or message an applicant from Review applicants.')
+            : t('Add a friend to start a conversation. Organizers can message you here once you apply.')}
         />
       }
       renderItem={({ item }) => {
@@ -140,12 +158,14 @@ function ChatsDivision() {
                 <Text style={[styles.post, item.unread > 0 && styles.postUnread]} numberOfLines={1}>
                   {item.post?.title ?? t('Direct message')}
                 </Text>
-                <View style={styles.streakRow}>
-                  <Ionicons name="flame-outline" size={13} color={item.streak ? colors.warn : colors.muted} />
-                  <Text style={[styles.streak, !item.streak && styles.streakZero]}>
-                    {item.streak === 1 ? t('1 event together') : t('{n} events together', { n: item.streak ?? 0 })}
-                  </Text>
-                </View>
+                {item.streak > 0 ? (
+                  <View style={styles.streakRow}>
+                    <Ionicons name="flame-outline" size={13} color={colors.warn} />
+                    <Text style={styles.streak}>
+                      {item.streak === 1 ? t('1 event together') : t('{n} events together', { n: item.streak })}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <Dot n={item.unread} />
               {iAmOrganizer && item.post && <Text style={styles.badge}>{t('Applicant')}</Text>}
@@ -278,27 +298,11 @@ function NewsDivision() {
   );
 }
 
-function SegBtn({ label, icon, on, onPress, n = 0 }) {
-  return (
-    <TouchableOpacity onPress={onPress} style={[styles.segBtn, on && styles.segBtnOn]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-        {icon ? <Ionicons name={icon} size={15} color={on ? colors.onBrand : colors.muted} /> : null}
-        <Text style={[styles.segText, on && { color: colors.onBrand }]}>{label}</Text>
-        <Dot n={n} plain />
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
-  head: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 8 },
+  head: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, ...column },
   heading: { ...type.h1 },
-  seg: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: radius.pill, padding: 4, marginTop: 10, borderWidth: 1, borderColor: colors.line },
-  segBtn: { flex: 1, paddingVertical: 9, borderRadius: radius.pill, alignItems: 'center' },
-  segBtnOn: { backgroundColor: colors.brand },
-  segText: { fontSize: 13, fontWeight: '700', color: colors.muted },
 
-  list: { padding: 16, paddingBottom: 32, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 32, ...column },
   row: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, marginBottom: 10 },
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   trash: { paddingHorizontal: 14, paddingVertical: 18, borderLeftWidth: 1, borderLeftColor: colors.line },
@@ -308,7 +312,6 @@ const styles = StyleSheet.create({
   postUnread: { color: colors.ink, fontWeight: '700' },
   streakRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
   streak: { fontSize: 12.5, color: colors.warn, fontWeight: '700' },
-  streakZero: { color: colors.muted, fontWeight: '600' },
   badge: { fontSize: 11, color: colors.warn, fontWeight: '700', backgroundColor: colors.warnSoft, paddingVertical: 4, paddingHorizontal: 8, borderRadius: radius.xs, overflow: 'hidden' },
 
   newsHead: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },

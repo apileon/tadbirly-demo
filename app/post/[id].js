@@ -2,37 +2,53 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, Linking, Image, Modal, Platform } from 'react-native';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, shadow, CATEGORIES, EVENT_LANGUAGES, typeMeta, awardMeta } from '../../lib/theme';
-import { Button, Tag, Avatar, EmptyState, TextField } from '../../components/ui';
+import { colors, radius, type, shadow, column, CATEGORIES, EVENT_LANGUAGES, typeMeta, awardMeta } from '../../lib/theme';
+import { Button, Tag, Avatar, EmptyState, TextField, Section, reliabilityText } from '../../components/ui';
+import { peek } from '../../lib/cache';
 import { useReportSheet, fetchContactDetails } from '../../lib/moderation';
 import { sendConnect } from '../../lib/social';
 import { notify } from '../../lib/notify';
 import { formatEventWhen } from '../../lib/events';
 import {
   useSavedIds, toggleSaved, shareEvent, shareToTelegram, addToGoogleCalendar, downloadIcs,
-  canAddToCalendar, hasPlace, openInMaps,
+  canAddToCalendar, hasPlace, openInMaps, seededPost,
 } from '../../lib/discover';
 import MapPreview from '../../components/MapPreview';
 import Ticket from '../../components/Ticket';
 import Stars from '../../components/Stars';
-import { daysUntil } from '../../components/EventCard';
+import { daysUntil, FriendsGoing } from '../../components/EventCard';
 import { t, dateLocale } from '../../lib/i18n';
+import { isTeamEvent, useMyTeam } from '../../lib/eventTeams';
+import { formatTitle } from '../../components/FormatPicker';
 
 const LANGUAGE_LABEL = Object.fromEntries(EVENT_LANGUAGES.map((l) => [l.key, l.label]));
+
+// The event as a list already had it (tapped in the feed / Saved, or still in
+// the feed cache), so the screen draws at once instead of a spinner.
+function initialPost(id, uid) {
+  const seeded = seededPost(id);
+  if (seeded) return seeded;
+  const hit = uid ? (peek(`feed:${uid}`)?.posts ?? []).find((x) => String(x.id) === String(id)) : null;
+  return hit ? { ...hit, author: { id: hit.author_id, ...(hit.author ?? {}) } } : null;
+}
 
 export default function PostDetail() {
   const { id } = useLocalSearchParams();
   const { session, profile } = useAuth();
   const router = useRouter();
   const uid = session?.user?.id;
-  const [post, setPost] = useState(null);
+  const [post, setPost] = useState(() => initialPost(id, uid));
   const [application, setApplication] = useState(null);
   const [roster, setRoster] = useState([]);
   const [results, setResults] = useState([]);
   const [reviews, setReviews] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // `loading`: nothing to show yet. `loaded`: the full fetch has answered —
+  // until then a seeded screen holds back what depends on your application.
+  const [loaded, setLoaded] = useState(false);
+  const loading = !loaded && !post;
   const [applyOpen, setApplyOpen] = useState(false);
   const [calOpen, setCalOpen] = useState(false);
   // Organizer's phone / Telegram / LinkedIn — only for people allowed to see
@@ -40,10 +56,16 @@ export default function PostDetail() {
   const [contact, setContact] = useState(null);
   const safety = useReportSheet({ onBlocked: () => router.back() });
   const savedIds = useSavedIds();
+  const insets = useSafeAreaInsets();
+  // Team events: the student's team and next match (organizer-run teams).
+  const myTeam = useMyTeam(id, uid, !!post && isTeamEvent(post) && (post.author?.id ?? post.author_id) !== uid);
 
   // Requests in parallel rather than one wait after another.
   const load = useCallback(async () => {
-    const [postRes, appRes, rosterRes, awRes, revRes] = await Promise.all([
+    // With the organizer known from the seed, their contact details come in
+    // the same round instead of after it.
+    const knownAuthor = seededPost(id)?.author_id ?? null;
+    const [postRes, appRes, rosterRes, awRes, revRes, contactSeed] = await Promise.all([
       supabase
         .from('posts')
         .select('*, author:profiles!posts_author_id_fkey(id, full_name, reliability, avatar_url)')
@@ -63,14 +85,20 @@ export default function PostDetail() {
         .select('id, rating, comment, created_at, reviewer_id, reviewer:profiles!event_reviews_reviewer_id_fkey(id, full_name, avatar_url)')
         .eq('post_id', id)
         .order('created_at', { ascending: false }),
+      knownAuthor ? fetchContactDetails(knownAuthor).catch(() => null) : Promise.resolve(undefined),
     ]);
-    setPost(postRes.data);
-    setContact(postRes.data?.author?.id ? await fetchContactDetails(postRes.data.author.id) : null);
+    // A failed request (offline) keeps the seeded copy on screen; only a real
+    // "no such row" (PGRST116) means the event is gone.
+    setPost((prev) => postRes.data ?? (postRes.error && postRes.error.code !== 'PGRST116' ? prev : null));
+    const authorId = postRes.data?.author?.id;
+    setContact(!authorId ? null
+      : authorId === knownAuthor && contactSeed !== undefined ? contactSeed
+        : await fetchContactDetails(authorId));
     setApplication(appRes.data);
     setRoster(rosterRes.data ?? []);
     setResults(awRes.data ?? []);
     setReviews(revRes.error ? [] : (revRes.data ?? []));
-    setLoading(false);
+    setLoaded(true);
   }, [id, uid]);
 
   useFocusEffect(useCallback(() => {
@@ -115,7 +143,7 @@ export default function PostDetail() {
 
   const cat = CATEGORIES[post.kind] ?? CATEGORIES.event;
   const tm = typeMeta(post.category);
-  const isOwner = post.author?.id === uid;
+  const isOwner = (post.author?.id ?? post.author_id) === uid;
   const isFinished = post.status === 'completed';
   const accepted = roster.filter((r) => r.status === 'accepted');
   const canChat = isOwner || application?.status === 'accepted';
@@ -136,9 +164,17 @@ export default function PostDetail() {
     if (questions.length) setApplyOpen(true);
     else apply(null);
   }
+  // Same handler as the in-page Apply button. Team events too: students
+  // apply alone and the organizer makes the teams.
+  const applyAction = onApplyPress;
+  const teamEvent = isTeamEvent(post);
+  const canApplyNow = !status && !isFinished && !deadlinePassed;
+  // Sticky bar: students only, once we know whether they already applied.
+  const showBar = loaded && !isOwner && profile?.role !== 'organizer' && !!uid && (status || canApplyNow);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={styles.page}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={[styles.page, showBar && { paddingBottom: 110 }]}>
       {isFinished && (
         <View style={styles.finished}>
           <Ionicons name="flag-outline" size={18} color={colors.body} />
@@ -181,8 +217,10 @@ export default function PostDetail() {
               />
             ) : null}
             <Fact
-              icon={post.team_mode === 'team' ? 'people-outline' : 'person-outline'}
-              text={post.team_mode === 'team' ? t('Teams only · at least {n} people', { n: post.team_min ?? 2 }) : t('Individual applications')}
+              icon={teamEvent ? 'people-outline' : 'person-outline'}
+              text={teamEvent
+                ? [t('Team event · {n} per team', { n: post.team_size ?? post.team_min ?? 2 }), formatTitle(post.format)].filter(Boolean).join(' · ')
+                : t('Individual applications')}
             />
             <Fact icon="pricetag-outline" text={post.is_free === false ? (post.fee || t('Paid')) : t('Free')} />
             {post.language ? <Fact icon="language-outline" text={t(LANGUAGE_LABEL[post.language] ?? post.language)} /> : null}
@@ -206,15 +244,15 @@ export default function PostDetail() {
         <Ticket postId={post.id} code={application.checkin_code} name={profile?.full_name} checkedIn={application.checked_in} />
       ) : null}
 
-      {/* Who's in — avatar stack + counts + event chat */}
+      {/* Who's in — avatar stack + counts + event chat. Hidden while nobody
+          has applied ("0 applied · 0 accepted" only makes an event look dead),
+          except for whoever has the event chat button in it. */}
+      {(roster.length > 0 || canChat) && (
       <View style={styles.rosterRow}>
         <View style={styles.avatars}>
           {roster.slice(0, 4).map((r, i) => (
             <Avatar key={r.id} id={r.id} name={r.full_name} size={30} style={[styles.av, { marginLeft: i ? -9 : 0, zIndex: 10 - i }]} />
           ))}
-          {roster.length === 0 && (
-            <View style={[styles.av, styles.avEmpty]}><Ionicons name="person-outline" size={14} color={colors.faint} /></View>
-          )}
         </View>
         <Text style={styles.rosterText}>
           {t('{n} applied', { n: roster.length })} · <Text style={{ color: colors.brand, fontWeight: '700' }}>{t('{n} accepted', { n: accepted.length })}</Text>
@@ -223,12 +261,18 @@ export default function PostDetail() {
           <Button title={t('Event chat')} icon="chatbubbles-outline" size="sm" variant="dark" onPress={() => router.push(`/event-chat/${post.id}`)} />
         )}
       </View>
+      )}
+      <FriendsGoing postId={post.id} style={{ marginBottom: 10, marginHorizontal: 4 }} />
       {accepted.length > 0 && (
         <Text style={styles.going}>
           <Text style={{ fontWeight: '700', color: colors.ink }}>{t('Going:')} </Text>
           {accepted.map((r) => r.full_name).join(', ')}
         </Text>
       )}
+
+      {myTeam?.team || myTeam?.hasMatches ? (
+        <MyTeamCard info={myTeam} postId={post.id} router={router} />
+      ) : null}
 
       {results.length > 0 && (() => {
         const winners = results.filter((x) => x.kind === 'winner').sort((x, y) => (x.place ?? 9) - (y.place ?? 9));
@@ -294,7 +338,7 @@ export default function PostDetail() {
         </View>
         <View style={styles.reliability}>
           <Ionicons name="shield-checkmark" size={13} color={colors.brand} />
-          <Text style={styles.reliabilityText}>{a.reliability ?? 75}%</Text>
+          <Text style={styles.reliabilityText}>{reliabilityText(a.reliability)}</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={colors.faint} />
       </TouchableOpacity>
@@ -345,8 +389,11 @@ export default function PostDetail() {
           <Button title={t('Review applicants')} icon="document-text-outline" onPress={() => router.push(`/applicants/${post.id}`)} />
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
             <Button title={t('Scan tickets')} icon="qr-code-outline" variant="ghost" style={{ flex: 1 }} onPress={() => router.push(`/scan/${post.id}`)} />
-            <Button title={t('Stats')} icon="stats-chart-outline" variant="ghost" style={{ flex: 1 }} onPress={() => router.push('/dashboard')} />
+            <Button title={t('Stats')} icon="stats-chart-outline" variant="ghost" style={{ flex: 1 }} onPress={() => router.push(`/dashboard?post=${post.id}`)} />
           </View>
+          {teamEvent && (
+            <Button title={t('Teams & matches')} icon="trophy-outline" variant="soft" style={{ marginTop: 10 }} onPress={() => router.push(`/tournament/${post.id}`)} />
+          )}
           <Button title={t('Edit event')} icon="create-outline" variant="ghost" style={{ marginTop: 10 }} onPress={() => router.push(`/event-edit/${post.id}`)} />
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
             <Button title={t('Accepted')} icon="people-outline" variant="ghost" style={{ flex: 1 }} onPress={() => router.push(`/accepted/${post.id}`)} />
@@ -362,6 +409,8 @@ export default function PostDetail() {
             <Text style={styles.hint}>{t('Your contact details are shown only to people who applied to your events.')}</Text>
           )}
         </View>
+      ) : !loaded ? (
+        <ActivityIndicator style={{ marginTop: 12 }} color={colors.brand} />
       ) : (
         <>
           {status ? (
@@ -373,11 +422,7 @@ export default function PostDetail() {
               </View>
             </View>
           ) : !isFinished && !deadlinePassed ? (
-            post.team_mode === 'team' ? (
-              <Button title={t('Apply as a team')} icon="people" onPress={() => router.push(`/team-apply/${post.id}`)} style={{ marginTop: 6 }} />
-            ) : (
-              <Button title={t('Apply now')} icon="arrow-forward" onPress={onApplyPress} style={{ marginTop: 6 }} />
-            )
+            <Button title={t('Apply now')} icon="arrow-forward" onPress={onApplyPress} style={{ marginTop: 6 }} />
           ) : null}
 
           <Button
@@ -416,6 +461,80 @@ export default function PostDetail() {
         </TouchableOpacity>
       </Modal>
     </ScrollView>
+
+    {showBar ? (
+      <View style={[styles.bar, { paddingBottom: 14 + (insets.bottom || 0) }]}>
+        <View style={styles.barInner}>
+          {status ? (
+            <View style={[styles.barStatus, { backgroundColor: status.soft }]}>
+              <Ionicons name={status.icon} size={18} color={status.color} />
+              <Text style={[styles.barStatusText, { color: status.color }]} numberOfLines={1}>{status.title}</Text>
+            </View>
+          ) : (
+            <>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.barTitle} numberOfLines={1}>{post.title}</Text>
+                {post.deadline ? (
+                  <Text style={styles.barSub} numberOfLines={1}>
+                    {t('Apply by {date}', { date: new Date(`${post.deadline}T00:00:00`).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long' }) })}
+                  </Text>
+                ) : null}
+              </View>
+              <Button
+                title={t('Apply now')}
+                icon="arrow-forward"
+                onPress={applyAction}
+                style={{ paddingHorizontal: 20 }}
+              />
+            </>
+          )}
+        </View>
+      </View>
+    ) : null}
+    </View>
+  );
+}
+
+// "Your team: Falcons" + teammates + next match, and the way to the bracket.
+function MyTeamCard({ info, postId, router }) {
+  const { team, names, next, last, hasMatches } = info;
+  const name = (id) => (id ? names[id] ?? t('Team') : t('TBD'));
+  let line = null;
+  if (next) line = `${t('Next match')}: ${name(next.team_a)} – ${name(next.team_b)}`;
+  else if (last) {
+    const won = last.winner === team?.id;
+    const draw = !last.winner;
+    line = `${draw ? t('Last match: draw') : won ? t('Last match: won') : t('Last match: lost')} ${last.score_a}–${last.score_b}`;
+  }
+  return (
+    <View style={styles.teamCard}>
+      {team ? (
+        <>
+          <View style={styles.teamHead}>
+            <View style={styles.factIcon}><Ionicons name="people" size={15} color={colors.brand} /></View>
+            <Text style={styles.teamName} numberOfLines={1}>
+              <Text style={styles.teamLabel}>{t('Your team')}: </Text>{team.name}
+            </Text>
+          </View>
+          <View style={styles.mates}>
+            {team.members.map((m) => (
+              <TouchableOpacity key={m.id} onPress={() => router.push(`/user/${m.id}`)} accessibilityLabel={m.full_name} style={styles.mate}>
+                <Avatar uri={m.avatar_url} id={m.id} name={m.full_name} size={34} />
+                <Text style={styles.mateName} numberOfLines={1}>{String(m.full_name ?? '').split(' ')[0]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {line ? <Text style={styles.teamLine}>{line}</Text> : null}
+        </>
+      ) : null}
+      {hasMatches ? (
+        <TouchableOpacity style={[styles.mapLink, !team && { marginTop: 0 }]} onPress={() => router.push(`/tournament/${postId}`)} accessibilityRole="link">
+          <Ionicons name="trophy-outline" size={16} color={colors.brand} />
+          <Text style={styles.mapLinkText}>{t('See bracket & standings')}</Text>
+          <Ionicons name="chevron-forward" size={15} color={colors.faint} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
   );
 }
 
@@ -473,17 +592,6 @@ const statusMeta = (s) =>
       ? { icon: 'close-circle', title: t('Not selected this time'), sub: t('Keep going: there are more events in the feed.'), color: colors.danger, soft: colors.dangerSoft }
       : { icon: 'time', title: t('Application sent'), sub: t('The organizer will review it soon.'), color: colors.warn, soft: colors.warnSoft };
 
-function Section({ title, icon, children }) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHead}>
-        {icon ? <Ionicons name={icon} size={14} color={colors.muted} /> : null}
-        <Text style={styles.sectionTitle}>{title}</Text>
-      </View>
-      {children}
-    </View>
-  );
-}
 function Fact({ icon, text, tone }) {
   const warn = tone === 'warn';
   return (
@@ -519,7 +627,17 @@ function ContactRow({ icon, label, sub, onPress, last }) {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 48, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 48, ...column },
+  bar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.line,
+    paddingHorizontal: 16, paddingTop: 10, paddingBottom: 14, ...shadow.lg,
+  },
+  barInner: { ...column, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  barTitle: { fontSize: 14.5, fontWeight: '700', color: colors.ink },
+  barSub: { fontSize: 12, color: colors.muted, marginTop: 1 },
+  barStatus: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.md, paddingVertical: 13 },
+  barStatusText: { fontSize: 14.5, fontWeight: '700' },
   finished: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radius.md, padding: 14, marginBottom: 12 },
   finishedText: { color: colors.ink, fontSize: 14.5, fontWeight: '700' },
   finishedSub: { color: colors.muted, fontSize: 12.5, marginTop: 2 },
@@ -544,10 +662,15 @@ const styles = StyleSheet.create({
   avEmpty: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
   rosterText: { flex: 1, fontSize: 13, color: colors.muted, fontWeight: '600' },
   going: { fontSize: 12.5, color: colors.muted, marginBottom: 12, marginHorizontal: 4, lineHeight: 18 },
-  section: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 16, marginBottom: 12 },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  sectionTitle: { ...type.caption, textTransform: 'uppercase', letterSpacing: 0.8 },
   body: { ...type.body },
+  teamCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 14, marginBottom: 12 },
+  teamHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  teamLabel: { color: colors.muted, fontWeight: '600' },
+  teamName: { flex: 1, fontSize: 15.5, fontWeight: '800', color: colors.ink },
+  mates: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  mate: { alignItems: 'center', width: 52, gap: 4 },
+  mateName: { fontSize: 11.5, color: colors.body, maxWidth: 52 },
+  teamLine: { fontSize: 13.5, color: colors.body, fontWeight: '600', marginTop: 12 },
   resultRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 6 },
   resultMedal: { fontSize: 18, lineHeight: 22 },
   resultText: { flex: 1, fontSize: 14, color: colors.ink, lineHeight: 21 },

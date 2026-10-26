@@ -7,7 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type } from '../../lib/theme';
+import { colors, radius, type, column } from '../../lib/theme';
 import { Button, EmptyState } from '../../components/ui';
 import { t } from '../../lib/i18n';
 import { confirmAsync, notify } from '../../lib/notify';
@@ -29,6 +29,9 @@ export default function EventChat() {
   const [post, setPost] = useState(null);
   const [members, setMembers] = useState(0);
   const [messages, setMessages] = useState([]);
+  // Ids on screen, read by the realtime DELETE listener without resubscribing.
+  const shownIdsRef = useRef(new Set());
+  shownIdsRef.current = new Set(messages.map((m) => m.id));
   const [text, setText] = useState('');
   const [denied, setDenied] = useState(false);
   const listRef = useRef(null);
@@ -68,10 +71,14 @@ export default function EventChat() {
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
           load();
         })
+      // A DELETE only carries the row's id (no post_id to filter on), so it
+      // arrives for every event chat: act only on ids this chat actually shows.
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'event_messages' },
         (payload) => {
+          const gone = payload.old?.id;
+          if (!gone || !shownIdsRef.current.has(gone)) return;
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setMessages((prev) => prev.filter((m) => m.id !== payload.old?.id));
+          setMessages((prev) => prev.filter((m) => m.id !== gone));
         })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -227,7 +234,7 @@ const styles = StyleSheet.create({
   title: { ...type.title, fontSize: 15 },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   sub: { fontSize: 12, color: colors.muted, flexShrink: 1 },
-  list: { padding: 16, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  list: { padding: 16, ...column },
   wrap: { marginBottom: 10 },
   sender: { fontSize: 11, color: colors.muted, fontWeight: '700', marginBottom: 3, marginLeft: 6 },
   bubble: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 13, borderRadius: radius.lg },

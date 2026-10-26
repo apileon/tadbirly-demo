@@ -4,8 +4,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
-import { colors, radius, type, shadow, CATEGORIES } from '../lib/theme';
-import { EmptyState, Tag } from '../components/ui';
+import { colors, radius, type, shadow, CATEGORIES, column } from '../lib/theme';
+import { EmptyState, StatusPill } from '../components/ui';
+import { formatEventWhen } from '../lib/events';
 import { t } from '../lib/i18n';
 
 // The post is fetched without its category, so the icon follows the coarse kind.
@@ -53,7 +54,7 @@ export default function MyApplications() {
             <View style={{ flex: 1 }}>
               <Text style={styles.title} numberOfLines={2}>{p.title ?? t('Post')}</Text>
               {where || p.event_date ? (
-                <Text style={styles.meta} numberOfLines={1}>{where}{p.event_date ? `${where ? ' · ' : ''}${p.event_date}` : ''}</Text>
+                <Text style={styles.meta} numberOfLines={1}>{where}{p.event_date ? `${where ? ' · ' : ''}${formatEventWhen(p.event_date)}` : ''}</Text>
               ) : null}
               <View style={{ marginTop: 8 }}>
                 <StatusPill status={item.status} />
@@ -67,18 +68,8 @@ export default function MyApplications() {
   );
 }
 
-function StatusPill({ status }) {
-  const map = {
-    pending: { label: t('Pending'), icon: 'time-outline', c: colors.warn, b: colors.warnSoft },
-    accepted: { label: t('Accepted'), icon: 'checkmark-circle', c: colors.accent, b: colors.accentSoft },
-    rejected: { label: t('Not selected'), icon: 'close-circle-outline', c: colors.danger, b: colors.dangerSoft },
-  };
-  const s = map[status] ?? map.pending;
-  return <Tag label={s.label} icon={s.icon} color={s.c} soft={s.b} />;
-}
-
 const styles = StyleSheet.create({
-  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 40, ...column },
   card: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 14, marginBottom: 12, ...shadow.sm },
   typeIcon: { width: 38, height: 38, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
   title: { ...type.title, fontSize: 15 },

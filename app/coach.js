@@ -6,22 +6,23 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../lib/auth';
-import { colors, radius, type, shadow, typeMeta } from '../lib/theme';
+import { colors, radius, type, shadow, column, typeMeta } from '../lib/theme';
 import { EmptyState, SectionHeader } from '../components/ui';
-import { askCoach, getCoachPlan, getCoachStatus, coachErrorText, COACH_MAX_QUESTION } from '../lib/coach';
-import { t } from '../lib/i18n';
+import { askCoach, getCoachPlan, getCoachStatusCached, coachErrorText, COACH_MAX_QUESTION } from '../lib/coach';
+import { t, getLocale } from '../lib/i18n';
 
 // Real AI coach: every answer comes from Claude via the `career-coach` edge
 // function, using only the student's own academic data + open events.
 
 // The English starters are shown (and sent) in the reader's language; the
-// Uzbek and Russian ones are there to show the coach speaks both.
+// native Uzbek / Russian ones only appear for readers of that language.
 const STARTERS = [
   { text: 'Which events should I join to strengthen my university application?', translate: true },
   { text: 'How can I prepare for IELTS while at school?', translate: true },
-  { text: 'Qaysi tadbirlar menga ko‘proq foyda beradi?' },
-  { text: 'Как подготовиться к поступлению за границу?' },
+  { text: 'Qaysi tadbirlar menga ko‘proq foyda beradi?', lang: 'uz' },
+  { text: 'Как подготовиться к поступлению за границу?', lang: 'ru' },
 ];
+const startersFor = (locale) => STARTERS.filter((s) => s.translate || s.lang === locale);
 
 // lib/coach's messages, translatable (the two with numbers or server text
 // in them are spelled out here so they can carry placeholders).
@@ -49,7 +50,7 @@ export default function Coach() {
   useEffect(() => {
     if (!session) return undefined;
     let alive = true;
-    getCoachStatus().then((res) => {
+    getCoachStatusCached().then((res) => {
       if (alive && !res.ok && res.code === 'not_configured') setBlocked('not_configured');
     });
     return () => { alive = false; };
@@ -177,7 +178,7 @@ export default function Coach() {
               <Ionicons name="chevron-forward" size={18} color={colors.faint} />
             </TouchableOpacity>
             <SectionHeader title={t('Or ask something')} />
-            {STARTERS.map((s) => {
+            {startersFor(getLocale()).map((s) => {
               const q = s.translate ? t(s.text) : s.text;
               return (
                 <TouchableOpacity key={s.text} style={styles.starter} onPress={() => run('chat', q)} disabled={disabled} activeOpacity={0.8}>
@@ -327,7 +328,7 @@ function Typing() {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.bg },
-  page: { padding: 16, paddingBottom: 8, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 8, ...column },
   hero: { backgroundColor: colors.brand, borderRadius: radius.lg, padding: 18, ...shadow.md },
   heroHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   heroIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
@@ -376,7 +377,7 @@ const styles = StyleSheet.create({
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.muted, marginRight: 4 },
   typingText: { color: colors.muted, fontSize: 12.5, marginLeft: 6 },
   composer: { borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.card, paddingHorizontal: 12, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 22 : 10 },
-  composerInner: { width: '100%', maxWidth: 720, alignSelf: 'center' },
+  composerInner: { ...column },
   planChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     alignSelf: 'flex-start', backgroundColor: colors.brandSoft, borderRadius: radius.pill, paddingVertical: 6, paddingHorizontal: 12, marginBottom: 8,

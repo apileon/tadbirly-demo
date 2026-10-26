@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { notify } from '../../lib/notify';
 import { useRouter } from 'expo-router';
-import { colors, radius, type } from '../../lib/theme';
+import { colors, radius, type, column } from '../../lib/theme';
 import { Button, TextField, Chip } from '../../components/ui';
 import { createTeam, parseSkills } from '../../lib/teams';
 import { t } from '../../lib/i18n';
@@ -64,7 +64,7 @@ export default function CreateTeam() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 620, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 40, ...column },
   sub: { ...type.small, marginTop: 4 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
 });

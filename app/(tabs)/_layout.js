@@ -7,6 +7,7 @@ import { colors } from '../../lib/theme';
 import { useAuth } from '../../lib/auth';
 import { useBadges, portalCount } from '../../lib/badges';
 import { IconDot } from '../../components/Dot';
+import { prefersReducedMotion } from '../../components/Motion';
 import { t } from '../../lib/i18n';
 
 // A tab icon that can carry a red dot in its top-right corner.
@@ -32,6 +33,8 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Tabs cross-fade instead of cutting (skipped with "Reduce motion").
+        animation: prefersReducedMotion() ? 'none' : 'fade',
         tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.muted,
         tabBarStyle: { borderTopColor: colors.line, height: 56 + bottomPad, paddingBottom: bottomPad, paddingTop: 7, backgroundColor: colors.card },
@@ -55,12 +58,13 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" color={color} size={size + 8} />,
         }}
       />
-      {/* Team Builder — participants only */}
+      {/* Old student-built teams: no longer in the bar (organizers make the
+          teams now, see app/tournament). The route stays for old links. */}
       <Tabs.Screen
         name="team-builder"
         options={{
           title: t('Teams'),
-          href: isOrg ? null : '/team-builder',
+          href: null,
           tabBarIcon: ({ color, size, focused }) => <Ionicons name={focused ? 'people' : 'people-outline'} color={color} size={size - 1} />,
         }}
       />

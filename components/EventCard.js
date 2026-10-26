@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, useWindowDimensions } from 'react-native';
+import React, { memo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, type, shadow, CATEGORIES, typeMeta } from '../lib/theme';
 import { formatStartTime } from '../lib/events';
 import { t, dateLocale } from '../lib/i18n';
+import { useFriendsGoing, friendsGoingText } from '../lib/discover';
+import { Avatar } from './ui';
 
 // The event card used by the feed and the Saved list.
 
@@ -26,20 +28,14 @@ const dayLabel = (d) => {
   return date.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short' });
 };
 
-// Reads a remote image's real shape so portrait posters aren't squashed
-// into a thin strip. Clamped like Instagram: never taller than 4:5.
-function useImageRatio(uri) {
-  const [ratio, setRatio] = useState(null);
-  useEffect(() => {
-    if (!uri) return;
-    let alive = true;
-    Image.getSize(uri, (w, h) => { if (alive && h) setRatio(w / h); }, () => {});
-    return () => { alive = false; };
-  }, [uri]);
-  return ratio;
-}
+// Covers get one fixed 16:10 frame (cropped to fill), decided by design
+// rather than by measuring each image: measuring made every card jump in
+// height once its picture arrived. The event page shows the whole poster.
+const COVER_RATIO = 1.6;
 
-export default function EventCard({ post, onPress, saved, onSave }) {
+// onPress(post) and onSave(postId): pass stable functions so a bookmark tap
+// re-renders only the card it changed (the card is memoised).
+function EventCard({ post, onPress, saved, onSave }) {
   const cat = CATEGORIES[post.kind] ?? CATEGORIES.event;
   const tm = typeMeta(post.category);
   const day = dayLabel(post.event_date);
@@ -48,17 +44,11 @@ export default function EventCard({ post, onPress, saved, onSave }) {
   const time = formatStartTime(post.start_time);
   const when = day && time ? `${day} · ${time}` : day;
   const deadlineIn = daysUntil(post.deadline);
-  const ratio = useImageRatio(post.cover_url);
-  const { width: winW } = useWindowDimensions();
-  const wide = winW >= 700; // laptop/desktop
-  // Phones can afford a tall 4:5 preview; on a laptop that's a wall of image,
-  // so portrait posters are cropped to a shorter card there.
-  const shown = ratio ? Math.min(Math.max(ratio, wide ? 1.25 : 0.8), 1.91) : 1.6;
   const where = post.is_online ? t('Online') : (post.location ?? post.city);
 
   const bookmark = (
     <TouchableOpacity
-      onPress={onSave}
+      onPress={() => onSave?.(post.id)}
       style={styles.saveBtn}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       accessibilityRole="button"
@@ -69,10 +59,10 @@ export default function EventCard({ post, onPress, saved, onSave }) {
   );
 
   return (
-    <TouchableOpacity activeOpacity={0.92} onPress={onPress} style={styles.card}>
+    <TouchableOpacity activeOpacity={0.92} onPress={() => onPress?.(post)} style={styles.card}>
       {post.cover_url ? (
         <View>
-          <Image source={{ uri: post.cover_url }} style={[styles.cover, { aspectRatio: shown }]} resizeMode="cover" />
+          <Image source={{ uri: post.cover_url }} style={styles.cover} resizeMode="cover" />
           <View style={styles.coverTag}>
             <Ionicons name={tm.icon} size={12} color="#fff" />
             <Text style={styles.coverTagText}>{t(tm.key)}</Text>
@@ -113,6 +103,7 @@ export default function EventCard({ post, onPress, saved, onSave }) {
             <Text style={styles.meta} numberOfLines={1}>{where}</Text>
           </View>
         ) : null}
+        <FriendsGoing postId={post.id} style={{ marginTop: 8 }} />
         <View style={styles.pills}>
           <Pill
             icon="pricetag-outline"
@@ -141,6 +132,35 @@ export default function EventCard({ post, onPress, saved, onSave }) {
   );
 }
 
+export default memo(EventCard);
+
+// One quiet line — tiny overlapping faces + "Aziz and 2 friends are going".
+// Renders nothing until friends_going() answers with someone (or if it fails).
+export function FriendsGoing({ postId, style }) {
+  const fgv = useFriendsGoing(postId);
+  const text = friendsGoingText(fgv);
+  if (!text) return null;
+  const names = fgv.names ?? [];
+  const faces = names.slice(0, 3);
+  return (
+    <View style={[styles.fgRow, style]}>
+      <View style={styles.fgFaces}>
+        {faces.map((name, i) => (
+          <Avatar
+            key={`${name}-${i}`}
+            id={name}
+            name={name}
+            uri={fgv.avatars?.[i] || null}
+            size={18}
+            style={[styles.fgFace, { marginLeft: i ? -6 : 0, zIndex: 3 - i }]}
+          />
+        ))}
+      </View>
+      <Text style={styles.fgText} numberOfLines={1}>{text}</Text>
+    </View>
+  );
+}
+
 function Pill({ icon, text, tone = 'neutral' }) {
   const c = tone === 'brand' ? [colors.brandSoft, colors.brand]
     : tone === 'warn' ? [colors.warnSoft, colors.warn]
@@ -155,7 +175,7 @@ function Pill({ icon, text, tone = 'neutral' }) {
 
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, marginBottom: 14, overflow: 'hidden', ...shadow.sm },
-  cover: { width: '100%', backgroundColor: colors.line, maxHeight: 560 },
+  cover: { width: '100%', aspectRatio: COVER_RATIO, backgroundColor: colors.line },
   coverFallback: { width: '100%', height: 96, alignItems: 'center', justifyContent: 'center' },
   coverTag: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(10,15,11,0.6)', borderRadius: radius.pill, paddingVertical: 5, paddingHorizontal: 10 },
   coverTagText: { color: '#fff', fontSize: 11.5, fontWeight: '700' },
@@ -173,4 +193,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.line, gap: 8 },
   author: { fontSize: 12.5, color: colors.muted, flex: 1 },
   spots: { fontSize: 12, color: colors.brand, fontWeight: '700' },
+  fgRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  fgFaces: { flexDirection: 'row', alignItems: 'center' },
+  fgFace: { borderWidth: 1.5, borderColor: colors.card },
+  fgText: { fontSize: 12, color: colors.muted, fontWeight: '600', flexShrink: 1 },
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSegments } from 'expo-router';
 import { colors, radius, type, shadow } from '../lib/theme';
 import {
   isInstalled, isIOS, notificationState, notificationHelp, unlockAudio, ping,
@@ -12,13 +13,46 @@ import { useAuth } from '../lib/auth';
 import { t } from '../lib/i18n';
 
 const DISMISS_KEY = 'tdb:install-dismissed';
+const FIRST_SEEN_KEY = 'tdb:first-seen';          // localStorage: first visit, ms
+const FIRST_SESSION_KEY = 'tdb:first-session';    // sessionStorage: this tab is that visit
+const FIRST_SESSION_MAX_MS = 12 * 60 * 60 * 1000; // a tab left open for days still "comes back"
 const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+
+// Not on the very first visit: someone who has just signed up should get to
+// look around before being asked to install or allow anything. From the
+// second visit on (a new tab / launch, or 12 hours later) the prompt works as
+// before. Decided once per page load.
+let firstSession = null;
+function isFirstSession() {
+  if (firstSession !== null) return firstSession;
+  firstSession = false;
+  try {
+    const now = Date.now();
+    const seen = Number(window.localStorage.getItem(FIRST_SEEN_KEY) || 0);
+    if (!seen) {
+      window.localStorage.setItem(FIRST_SEEN_KEY, String(now));
+      window.sessionStorage.setItem(FIRST_SESSION_KEY, '1');
+      firstSession = true;
+    } else {
+      firstSession = window.sessionStorage.getItem(FIRST_SESSION_KEY) === '1' && now - seen < FIRST_SESSION_MAX_MS;
+    }
+  } catch { /* storage blocked: behave as a returning visitor */ }
+  return firstSession;
+}
+
+// Screens where the banner never covers anything: logging in / signing up,
+// password reset and the onboarding steps.
+const QUIET_SEGMENTS = ['(auth)', 'onboarding', 'reset-password'];
 
 // One nudge at a time, never two:
 //   0. "Open in your browser"  — inside Telegram, Instagram & co., which can't
 //                                do notifications (or keep the login) at all
 //   1. "Install Tadbirly"      — until it's on their home screen
 //   2. "Turn on notifications" — once installed, if they haven't allowed them
+//
+// 1 and 2 wait for the second visit and never show on the login / sign-up /
+// onboarding screens. 0 is the exception on login and sign-up, and on a first
+// visit: in those browsers even staying logged in doesn't work.
 //
 // Web only. The iOS / Android app is already installed and asks for
 // notifications through the feed strip (NotifyNudge) and Profile instead —
@@ -29,8 +63,9 @@ export default function InstallPrompt() {
 }
 
 function WebInstallPrompt() {
-  const { session } = useAuth();
-  const uid = session?.user?.id;
+  const { uid } = useAuth();
+  const segments = useSegments();
+  const [newcomer] = useState(isFirstSession);
   const [deferred, setDeferred] = useState(null);   // Android/Chrome install event
   // 'inapp' | 'install' | 'ios' | 'notify' | 'blocked' | null
   // In-app browsers are decided on the very first render — no delay, and the
@@ -129,7 +164,7 @@ function WebInstallPrompt() {
 
   async function copy() {
     const ok = await copyLink(); // starts synchronously, inside the tap
-    if (!ok) { notify(t('Copy this link'), window.location.href); return; }
+    if (!ok) { notify(t('Copy this link'), window.location.href, { dialog: true }); return; }
     setCopied(true);
     clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 4000);
@@ -140,6 +175,8 @@ function WebInstallPrompt() {
   // browser". Install and notification banners wait until they're in the app,
   // instead of covering the login form on someone's first visit.
   if (!uid && mode !== 'inapp') return null;
+  if (segments[0] === 'onboarding') return null;
+  if (mode !== 'inapp' && (newcomer || QUIET_SEGMENTS.includes(segments[0]))) return null;
 
   const inApp = mode === 'inapp' ? inAppGuidance() : null;
 

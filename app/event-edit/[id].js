@@ -3,7 +3,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator, KeyboardAvoiding
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type } from '../../lib/theme';
+import { colors, radius, type, column } from '../../lib/theme';
 import { Button, EmptyState } from '../../components/ui';
 import { notify, confirmAsync } from '../../lib/notify';
 import { requireRows, endEvent, eventFormProblem, formatStartTime } from '../../lib/events';
@@ -176,7 +176,7 @@ export default function EditEvent() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 50, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 50, ...column },
   note: { fontSize: 11.5, color: colors.muted, textAlign: 'center', marginTop: 8, lineHeight: 16 },
   warnBox: { marginTop: 26, backgroundColor: colors.warnSoft, borderWidth: 1, borderColor: colors.warn, borderRadius: radius.md, padding: 16 },
   warnTitle: { ...type.title },

@@ -3,7 +3,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-nat
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type } from '../../lib/theme';
+import { colors, radius, type, column } from '../../lib/theme';
 import { Button, TextField, EmptyState } from '../../components/ui';
 import { notify } from '../../lib/notify';
 import { endEvent } from '../../lib/events';
@@ -83,7 +83,7 @@ export default function EndEvent() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 18, paddingBottom: 40, width: '100%', maxWidth: 620, alignSelf: 'center' },
+  page: { padding: 18, paddingBottom: 40, ...column },
   heading: { ...type.h1 },
   note: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 14, marginTop: 12 },
   sub: { ...type.body, fontSize: 13.5, lineHeight: 20 },

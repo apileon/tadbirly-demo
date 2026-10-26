@@ -18,10 +18,46 @@ import { t } from '../lib/i18n';
 const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
 const NO_TELEGRAM = { available: false, linked: false };
 
-// A slim, always-present strip at the top of the feed for anyone who doesn't
-// have notifications on. Unlike the bottom banner it can't be dismissed away
-// for good — it just disappears the moment notifications are actually working
-// (browser notifications allowed, or Telegram connected).
+// The small ✕ on the strip hides it for a week (per device, survives sign-out).
+const SNOOZE_KEY = 'tdb:nudge-snoozed-until';
+const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// null until read (no flash of a strip that then vanishes), then true/false.
+function useSnooze() {
+  const [snoozed, setSnoozed] = useState(null);
+  useEffect(() => {
+    let on = true;
+    AsyncStorage.getItem(SNOOZE_KEY).then(
+      (v) => { if (on) setSnoozed(Date.now() < Number(v || 0)); },
+      () => { if (on) setSnoozed(false); },
+    );
+    return () => { on = false; };
+  }, []);
+  const snooze = useCallback(() => {
+    setSnoozed(true);
+    AsyncStorage.setItem(SNOOZE_KEY, String(Date.now() + SNOOZE_MS)).catch(() => {});
+  }, []);
+  return [snoozed, snooze];
+}
+
+function CloseX({ onPress }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      hitSlop={{ top: 10, bottom: 10, left: 8, right: 10 }}
+      accessibilityRole="button"
+      accessibilityLabel={t('Hide for a week')}
+      style={styles.close}
+    >
+      <Ionicons name="close" size={16} color={colors.muted} />
+    </TouchableOpacity>
+  );
+}
+
+// A slim strip at the top of the feed for anyone who doesn't have
+// notifications on. It disappears the moment notifications are actually
+// working (browser notifications allowed, or Telegram connected); the ✕ hides
+// it for a week.
 //
 // The phone app gets its own version (NativeNudge below): OneSignal's
 // permission, the system prompt, and Settings — never browser instructions.
@@ -30,8 +66,8 @@ export default function NotifyNudge() {
 }
 
 function WebNudge() {
-  const { session } = useAuth();
-  const uid = session?.user?.id;
+  const { uid } = useAuth();
+  const [snoozed, snooze] = useSnooze();
   const router = useRouter();
   const segments = useSegments();
   const [perm, setPerm] = useState('granted'); // assume fine until we know better
@@ -55,7 +91,7 @@ function WebNudge() {
     return () => { alive = false; clearTimeout(slow); };
   }, [uid]));
 
-  if (!isWeb || perm === 'granted') return null;
+  if (!isWeb || perm === 'granted' || snoozed !== false) return null;
   // Wait for the Telegram answer rather than flash a strip that then vanishes.
   if (uid && !tg) return null;
   // Telegram is connected: notifications already reach them.
@@ -76,7 +112,7 @@ function WebNudge() {
   function onPress() {
     if (viaTelegram) { openLink(router, '/profile?focus=telegram', segments); return; }
     if (inApp) { leaveInAppBrowser(); return; }
-    if (help) { notify(help.title, help.body); return; }
+    if (help) { notify(help.title, help.body, { dialog: true }); return; }
 
     // Must stay the first real work in this handler: iPhones only show the
     // permission prompt while the tap is still being handled.
@@ -87,7 +123,7 @@ function WebNudge() {
       if (result === 'granted') ping();
       else if (result === 'denied') {
         const blocked = notificationHelp('denied');
-        notify(blocked.title, blocked.body);
+        notify(blocked.title, blocked.body, { dialog: true });
       }
       setPerm(notificationState());
       setBusy(false);
@@ -125,13 +161,16 @@ function WebNudge() {
   const icon = inApp ? 'globe-outline' : perm === 'denied' ? 'notifications-off-outline' : 'notifications-outline';
 
   return (
-    <TouchableOpacity style={styles.wrap} onPress={onPress} activeOpacity={0.85} disabled={busy} accessibilityRole="button">
-      <View style={styles.iconDot}><Ionicons name={icon} size={17} color={colors.brand} /></View>
-      <Text style={styles.text}>{label}</Text>
-      <View style={styles.cta}>
-        {busy ? <ActivityIndicator size="small" color={colors.onBrand} /> : <Text style={styles.ctaText}>{cta}</Text>}
-      </View>
-    </TouchableOpacity>
+    <View style={styles.wrap}>
+      <TouchableOpacity style={styles.main} onPress={onPress} activeOpacity={0.85} disabled={busy} accessibilityRole="button">
+        <View style={styles.iconDot}><Ionicons name={icon} size={17} color={colors.brand} /></View>
+        <Text style={styles.text}>{label}</Text>
+        <View style={styles.cta}>
+          {busy ? <ActivityIndicator size="small" color={colors.onBrand} /> : <Text style={styles.ctaText}>{cta}</Text>}
+        </View>
+      </TouchableOpacity>
+      <CloseX onPress={snooze} />
+    </View>
   );
 }
 
@@ -145,8 +184,8 @@ function WebNudge() {
 const SOFT_CARD_KEY = 'tdb:push-soft-dismissed'; // not cache-shaped: survives sign-out
 
 function NativeNudge() {
-  const { session } = useAuth();
-  const uid = session?.user?.id;
+  const { uid } = useAuth();
+  const [snoozed, snooze] = useSnooze();
   const router = useRouter();
   const segments = useSegments();
   const [perm, setPerm] = useState(null);       // null until known
@@ -184,7 +223,7 @@ function NativeNudge() {
   }, [uid, perm, tg]);
 
   if (!uid || !perm || perm === 'granted' || perm === 'unsupported') return null;
-  if (!tg || cardDismissed === null) return null;      // no flash of a strip that then vanishes
+  if (!tg || cardDismissed === null || snoozed !== false) return null; // no flash of a strip that then vanishes
   if (tg.available && tg.linked) return null;           // Telegram already delivers them
 
   const denied = perm === 'denied';
@@ -234,32 +273,37 @@ function NativeNudge() {
     : t('Turn on notifications so you don’t miss acceptances and invites');
 
   return (
-    <TouchableOpacity style={styles.wrap} onPress={turnOn} activeOpacity={0.85} disabled={busy} accessibilityRole="button">
-      <View style={styles.iconDot}>
-        <Ionicons name={denied ? 'notifications-off-outline' : 'notifications-outline'} size={17} color={colors.brand} />
-      </View>
-      <Text style={styles.text}>{label}</Text>
-      {denied && tg.available ? (
-        <TouchableOpacity
-          style={[styles.cta, styles.ctaGhost]}
-          onPress={() => openLink(router, '/profile?focus=telegram', segments)}
-        >
-          <Text style={[styles.ctaText, { color: colors.brand }]}>Telegram</Text>
-        </TouchableOpacity>
-      ) : null}
-      <View style={styles.cta}>
-        {busy ? <ActivityIndicator size="small" color={colors.onBrand} /> : <Text style={styles.ctaText}>{denied ? t('Settings') : t('Turn on')}</Text>}
-      </View>
-    </TouchableOpacity>
+    <View style={styles.wrap}>
+      <TouchableOpacity style={styles.main} onPress={turnOn} activeOpacity={0.85} disabled={busy} accessibilityRole="button">
+        <View style={styles.iconDot}>
+          <Ionicons name={denied ? 'notifications-off-outline' : 'notifications-outline'} size={17} color={colors.brand} />
+        </View>
+        <Text style={styles.text}>{label}</Text>
+        {denied && tg.available ? (
+          <TouchableOpacity
+            style={[styles.cta, styles.ctaGhost]}
+            onPress={() => openLink(router, '/profile?focus=telegram', segments)}
+          >
+            <Text style={[styles.ctaText, { color: colors.brand }]}>Telegram</Text>
+          </TouchableOpacity>
+        ) : null}
+        <View style={styles.cta}>
+          {busy ? <ActivityIndicator size="small" color={colors.onBrand} /> : <Text style={styles.ctaText}>{denied ? t('Settings') : t('Turn on')}</Text>}
+        </View>
+      </TouchableOpacity>
+      <CloseX onPress={snooze} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: colors.brandSoft, borderRadius: radius.md,
-    paddingVertical: 10, paddingHorizontal: 12, marginBottom: 14,
+    paddingVertical: 10, paddingLeft: 12, paddingRight: 6, marginBottom: 14,
   },
+  main: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  close: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   iconDot: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1, fontSize: 12.5, fontWeight: '600', color: colors.ink, lineHeight: 17 },
   cta: { backgroundColor: colors.brand, borderRadius: radius.pill, paddingVertical: 6, paddingHorizontal: 13, minWidth: 44, alignItems: 'center' },

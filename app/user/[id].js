@@ -5,9 +5,10 @@ import { notify } from '../../lib/notify';
 import { useLocalSearchParams, useFocusEffect, useRouter, useNavigation } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, shadow, awardMeta, typeMeta } from '../../lib/theme';
+import { colors, radius, type, shadow, column, awardMeta, typeMeta } from '../../lib/theme';
+import { formatEventWhen } from '../../lib/events';
 import { t } from '../../lib/i18n';
-import { Button, Avatar, EmptyState } from '../../components/ui';
+import { Button, Avatar, EmptyState, Section as UISection, reliabilityText } from '../../components/ui';
 import { sendConnect, connectionStatus, openDirectChat, respondConnect } from '../../lib/social';
 import { fetchContactDetails, useReportSheet, useBlockedIds, unblockUser } from '../../lib/moderation';
 
@@ -50,7 +51,12 @@ export default function PublicProfile() {
   const iAmOrg = me?.role === 'organizer';
 
   const load = useCallback(async () => {
-    const [profileRes, awardsRes, mutualRes, friendsRes, eventsRes] = await Promise.all([
+    const me = session?.user?.id;
+    const none = Promise.resolve({ data: null });
+    // One round: everything this screen needs goes out at once. The organizer
+    // part is asked for everyone (an empty answer for students) rather than
+    // waiting to learn the role first.
+    const [profileRes, awardsRes, mutualRes, friendsRes, eventsRes, contactRes, statusRes, ratingRes, openRes, appsRes] = await Promise.all([
       loadProfileRow(id),
       supabase.from('awards')
         .select('*, badge:badges(name, emoji), post:posts(title)')
@@ -58,34 +64,31 @@ export default function PublicProfile() {
       isMe ? Promise.resolve({ data: [] }) : supabase.rpc('mutual_friends', { target: id }),
       supabase.rpc('friends_of', { target: id }),
       supabase.rpc('recent_events_of', { target: id, n: 3 }),
+      fetchContactDetails(id).catch(() => null),
+      isMe ? Promise.resolve(null) : connectionStatus(id).catch(() => null),
+      supabase.rpc('organizer_rating', { target: id }),
+      supabase.from('posts').select('id, title, event_date, category, city, is_online')
+        .eq('author_id', id).eq('status', 'open')
+        .order('event_date', { ascending: true, nullsFirst: false }).limit(5),
+      iAmOrg && !isMe && me
+        ? supabase.from('applications').select('post:posts(id, title, author_id)').eq('applicant_id', id).eq('status', 'accepted')
+        : none,
     ]);
     setP(profileRes.data);
-    setContact(await fetchContactDetails(id));
+    setContact(contactRes);
     setAwards(awardsRes.data ?? []);
     setMutuals(mutualRes.data ?? []);
     setFriendCount((friendsRes.data ?? []).length);
     setRecent(eventsRes.data ?? []);
     if (profileRes.data?.role === 'organizer') {
-      const [ratingRes, openRes] = await Promise.all([
-        supabase.rpc('organizer_rating', { target: id }),
-        supabase.from('posts').select('id, title, event_date, category, city, is_online')
-          .eq('author_id', id).eq('status', 'open')
-          .order('event_date', { ascending: true, nullsFirst: false }).limit(5),
-      ]);
       setOrg(ratingRes.error ? null : (ratingRes.data?.[0] ?? null));
       setOrgEvents(openRes.data ?? []);
     } else {
       setOrg(null);
       setOrgEvents([]);
     }
-    if (!isMe) setStatus(await connectionStatus(id));
-    if (iAmOrg && !isMe && session?.user?.id) {
-      const { data: apps } = await supabase
-        .from('applications')
-        .select('post:posts(id, title, author_id)')
-        .eq('applicant_id', id).eq('status', 'accepted');
-      setAwardable((apps ?? []).map((a) => a.post).filter((po) => po && po.author_id === session.user.id));
-    }
+    if (!isMe) setStatus(statusRes);
+    setAwardable((appsRes.data ?? []).map((a) => a.post).filter((po) => po && po.author_id === me));
     setLoading(false);
   }, [id, isMe, iAmOrg, session]);
 
@@ -106,7 +109,9 @@ export default function PublicProfile() {
 
   async function addFriend() {
     const { error } = await sendConnect(id);
-    if (error) notify(t('Already requested'), t('You have already sent a request.'));
+    // sendConnect words its own errors (already friends, they asked you first,
+    // offline…) — show the real one.
+    if (error) notify(t('Could not send the request'), error.message);
     else { notify(t('Request sent'), t('They can accept you from their Portal, under Networking.')); load(); }
   }
 
@@ -161,7 +166,7 @@ export default function PublicProfile() {
           )}
           <View style={styles.badge}>
             <Ionicons name="shield-checkmark" size={13} color={colors.brand} />
-            <Text style={styles.badgeText}>{t('{n}% reliability', { n: p.reliability ?? 75 })}</Text>
+            <Text style={styles.badgeText}>{reliabilityText(p.reliability, { hasHistory: recent.length > 0 || awards.length > 0, format: '{n}% reliability' })}</Text>
           </View>
         </View>
       </View>
@@ -326,7 +331,7 @@ export default function PublicProfile() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.recentTitle} numberOfLines={1}>{e.title}</Text>
                 <Text style={styles.recentMeta}>
-                  {e.event_date ?? t('Date not set')}{e.status === 'completed' ? ` · ${t('Finished')}` : ''}
+                  {e.event_date ? formatEventWhen(e.event_date) : t('Date not set')}{e.status === 'completed' ? ` · ${t('Finished')}` : ''}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={15} color={colors.faint} />
@@ -424,16 +429,9 @@ const row = (label, value) => (value ? (
   <View style={styles.kv}><Text style={styles.k}>{label}</Text><Text style={styles.v}>{value}</Text></View>
 ) : null);
 
-function Section({ title, icon, children }) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHead}>
-        {icon ? <Ionicons name={icon} size={15} color={colors.muted} /> : null}
-        <Text style={styles.sectionTitle}>{title}</Text>
-      </View>
-      {children}
-    </View>
-  );
+// The shared card section, with this screen's soft shadow.
+function Section(props) {
+  return <UISection {...props} style={styles.section} />;
 }
 function ContactRow({ icon, label, onPress }) {
   return (
@@ -454,7 +452,7 @@ function Chips({ items }) {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 40, ...column },
   orgCard: {
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg,
     padding: 16, marginBottom: 12, ...shadow.sm,
@@ -481,7 +479,7 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 11.5, color: colors.brand, fontWeight: '700' },
   sticky: {
     backgroundColor: colors.warnSoft, borderRadius: radius.sm, padding: 16, marginBottom: 14, marginTop: 2,
-    transform: [{ rotate: '-1deg' }], borderWidth: 1, borderColor: colors.line, ...shadow.sm,
+    borderWidth: 1, borderColor: colors.line, ...shadow.sm,
   },
   stickyText: { fontSize: 14.5, color: colors.ink, fontStyle: 'italic', lineHeight: 21 },
   socialRow: {
@@ -498,12 +496,7 @@ const styles = StyleSheet.create({
   requestHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   requestText: { fontSize: 14, fontWeight: '800', color: colors.brand, textAlign: 'center', flexShrink: 1 },
   blank: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.lineStrong, borderStyle: 'dashed', borderRadius: radius.lg, marginBottom: 12 },
-  section: {
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg,
-    padding: 16, marginBottom: 12, ...shadow.sm,
-  },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  sectionTitle: { ...type.caption, textTransform: 'uppercase', letterSpacing: 0.8 },
+  section: { ...shadow.sm },
   body: { ...type.body, fontSize: 14 },
   kv: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 6 },
   k: { fontSize: 13, color: colors.muted },

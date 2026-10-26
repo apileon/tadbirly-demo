@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, shadow } from '../../lib/theme';
+import { colors, radius, type, shadow, column } from '../../lib/theme';
 import { Avatar, EmptyState } from '../../components/ui';
 import { notify, confirmAsync } from '../../lib/notify';
 import { timeAgo } from '../../lib/news';
@@ -248,7 +248,7 @@ export default function NewsDetail() {
 }
 
 const styles = StyleSheet.create({
-  list: { padding: 16, paddingBottom: 24, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 24, ...column },
   postCard: {
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg,
     overflow: 'hidden', ...shadow.sm,
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   commentBody: { fontSize: 14, color: colors.body, lineHeight: 20, marginTop: 2 },
   iconHit: { paddingTop: 10, paddingHorizontal: 2 },
   inputBar: { backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.line },
-  inputRow: { flexDirection: 'row', gap: 8, padding: 12, alignItems: 'center', width: '100%', maxWidth: 680, alignSelf: 'center' },
+  inputRow: { flexDirection: 'row', gap: 8, padding: 12, alignItems: 'center', ...column },
   input: {
     flex: 1, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.line, borderRadius: radius.pill,
     paddingVertical: 11, paddingHorizontal: 16, fontSize: 14, color: colors.ink, outlineStyle: 'none',

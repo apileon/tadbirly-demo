@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-nat
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type } from '../../lib/theme';
+import { colors, radius, type, column } from '../../lib/theme';
 import { Button, TextField } from '../../components/ui';
 import Stars from '../../components/Stars';
 import { notify } from '../../lib/notify';
@@ -80,7 +80,7 @@ export default function Review() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  page: { padding: 16, ...column },
   card: { backgroundColor: colors.card, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.line, padding: 20 },
   title: { ...type.h2, marginTop: 2 },
   stars: { alignItems: 'center', marginTop: 22, marginBottom: 6 },

@@ -1,34 +1,44 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { colors, radius, type, shadow } from '../lib/theme';
-import { EmptyState, SectionHeader } from '../components/ui';
+import { colors, radius, type, shadow, column } from '../lib/theme';
+import { EmptyState, SectionHeader, Button } from '../components/ui';
 import Stars from '../components/Stars';
 import { t, dateLocale } from '../lib/i18n';
 
+// A function the database doesn't have yet (migration not run).
+const missingFunction = (e) => !!e && (e.code === 'PGRST202' || e.code === '42883');
+
 // Organizer stats: how each event does from views to people at the door.
+// '/dashboard?post=<id>' shows one event (opened from that event's page).
 export default function Dashboard() {
   const router = useRouter();
+  const { post: onlyPost } = useLocalSearchParams();
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     const { data, error: e } = await supabase.rpc('organizer_event_stats');
-    setError(e ? e.message : null);
+    // Never show the raw database message: say what it means for them.
+    setError(e ? (missingFunction(e) ? 'missing' : 'failed') : null);
     setRows(data ?? []);
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   if (rows === null) return <ActivityIndicator style={{ marginTop: 60 }} color={colors.brand} />;
-  if (error) return <EmptyState icon="stats-chart-outline" title={t('Stats are not switched on yet')} text={error} />;
+  if (error === 'missing') return <EmptyState icon="stats-chart-outline" title={t('Stats are not switched on yet')} text={t('They appear here as soon as they are turned on for your account.')} />;
+  if (error) return <EmptyState icon="cloud-offline-outline" title={t('Could not load')} text={t('Please check your connection and try again.')} action={t('Try again')} onAction={load} />;
   if (!rows.length) return <EmptyState icon="stats-chart-outline" title={t('No events yet')} text={t('Post an event and its numbers show up here.')} />;
 
-  const sum = (k) => rows.reduce((s, r) => s + Number(r[k] ?? 0), 0);
-  const rated = rows.filter((r) => r.rating != null);
+  const filtered = onlyPost ? rows.filter((r) => String(r.post_id) === String(onlyPost)) : [];
+  const single = filtered.length > 0;
+  const shown = single ? filtered : rows;
+  const sum = (k) => shown.reduce((s, r) => s + Number(r[k] ?? 0), 0);
+  const rated = shown.filter((r) => r.rating != null);
   const avgRating = rated.length ? rated.reduce((s, r) => s + Number(r.rating), 0) / rated.length : null;
 
   return (
@@ -37,6 +47,12 @@ export default function Dashboard() {
       contentContainerStyle={styles.page}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.brand} />}
     >
+      {single ? (
+        <View style={styles.singleHead}>
+          <Text style={styles.singleTitle} numberOfLines={2}>{filtered[0].title}</Text>
+          <Button title={t('All stats')} icon="stats-chart-outline" variant="ghost" size="sm" onPress={() => router.setParams({ post: undefined })} />
+        </View>
+      ) : null}
       <View style={styles.kpis}>
         <Kpi icon="eye-outline" value={sum('views')} label={t('Views')} />
         <Kpi icon="document-text-outline" value={sum('applied')} label={t('Applications')} />
@@ -53,8 +69,8 @@ export default function Dashboard() {
         </View>
       )}
 
-      <SectionHeader title={t('By event')} />
-      {rows.map((r) => {
+      <SectionHeader title={single ? t('Funnel') : t('By event')} />
+      {shown.map((r) => {
         const max = Math.max(Number(r.views) || 0, Number(r.applied) || 0, 1);
         const conv = r.views > 0 ? Math.round((Number(r.applied) / Number(r.views)) * 100) : null;
         return (
@@ -118,7 +134,9 @@ function Mini({ icon, text }) {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 40, ...column },
+  singleHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  singleTitle: { ...type.h2, flex: 1 },
   kpis: { flexDirection: 'row', gap: 8 },
   kpi: { flex: 1, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 12, gap: 4, ...shadow.sm },
   kpiValue: { fontSize: 22, fontWeight: '800', color: colors.ink, letterSpacing: -0.5 },

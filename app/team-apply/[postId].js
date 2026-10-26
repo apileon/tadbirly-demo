@@ -3,7 +3,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { colors, radius, type, shadow } from '../../lib/theme';
+import { colors, radius, type, shadow, column } from '../../lib/theme';
 import { Button, EmptyState, SectionHeader, TextField } from '../../components/ui';
 import { notify } from '../../lib/notify';
 import { myTeamsWithSize, applyAsTeam } from '../../lib/teams';
@@ -150,7 +150,7 @@ export default function TeamApply() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 640, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 40, ...column },
   h1: { ...type.h1 },
   sub: { ...type.small, marginTop: 6, lineHeight: 20 },
   card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, ...shadow.sm },

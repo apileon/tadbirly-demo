@@ -5,7 +5,7 @@ import { SkeletonList } from '../components/Skeleton';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
-import { colors, radius, type, shadow } from '../lib/theme';
+import { colors, radius, type, shadow, column } from '../lib/theme';
 import { Avatar, EmptyState } from '../components/ui';
 import { t } from '../lib/i18n';
 
@@ -108,7 +108,7 @@ export default function Leaderboard() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 40, ...column },
   meCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: colors.brand, borderRadius: radius.lg, padding: 16, marginBottom: 14, ...shadow.md,

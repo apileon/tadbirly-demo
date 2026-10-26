@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, ActivityIndicator, TouchableOpacity, Text, Platform } from 'react-native';
-import { Stack, useRouter, useSegments, usePathname } from 'expo-router';
+import { Stack, useRouter, useSegments, usePathname, useNavigationContainerRef } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,9 +8,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { BadgeProvider } from '../lib/badges';
 import { colors, isDark } from '../lib/theme';
-import { LocaleProvider, t } from '../lib/i18n';
+import { LocaleProvider, t, useLocale } from '../lib/i18n';
 import NotificationToast from '../components/NotificationToast';
 import InstallPrompt from '../components/InstallPrompt';
+import { ToastHost } from '../components/Toast';
+import { FadeIn, prefersReducedMotion } from '../components/Motion';
 import { unlockAudio } from '../lib/feedback';
 
 // Expo Router wraps a layout in an error boundary when the layout exports one.
@@ -76,7 +78,7 @@ function HeaderBack() {
       hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
       activeOpacity={0.7}
       accessibilityRole="button"
-      accessibilityLabel="Back"
+      accessibilityLabel={t('Back')}
       style={{
         width: 38,
         height: 38,
@@ -93,44 +95,120 @@ function HeaderBack() {
   );
 }
 
+// Reachable without logging in: password reset (the link arrives signed out,
+// signs the user in, and still needs this screen to set the new password),
+// and the legal pages (store reviewers and listings link to them).
+const PUBLIC_ROUTES = ['(auth)', 'reset-password', 'legal', 'privacy'];
+
 // Redirect users into or out of the app depending on auth state.
 // A shared event link opened while signed out: remembered here and opened
 // right after login, instead of dropping the student on the feed.
 let pendingPath = null;
 
 function useProtectedRoute() {
-  const { session, profile, loading } = useAuth();
+  const { uid, profile, profileReady, loading } = useAuth();
   const segments = useSegments();
   const pathname = usePathname();
   const router = useRouter();
+  // New account: pick interests first, so the feed is personal from day one.
+  // (Databases without 29_growth.sql have no `onboarded` — undefined skips this.)
+  const needsOnboarding = !!uid && profileReady && profile?.onboarded === false;
 
   useEffect(() => {
     if (loading) return;
-    // The password-reset link works for both states: it arrives signed out,
-    // signs the user in from the link, and then still needs this screen to set
-    // the new password. Bouncing it to login or the feed would lose the link.
-    // Reachable without logging in: password reset, and the legal pages
-    // (store reviewers and listings link to them).
-    if (['reset-password', 'legal', 'privacy'].includes(segments[0])) return;
+    if (PUBLIC_ROUTES.includes(segments[0]) && segments[0] !== '(auth)') return;
     const inAuthGroup = segments[0] === '(auth)';
-    if (!session && !inAuthGroup) {
+    if (!uid) {
+      if (inAuthGroup) return;
       if (pathname && pathname !== '/' && !pathname.startsWith('/login')) pendingPath = pathname;
       router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
+      return;
+    }
+    // Signed in, but this person's profile hasn't arrived yet: decide nothing
+    // until it has (ScreenGate keeps the screens blank meanwhile).
+    if (!profileReady) return;
+    if (needsOnboarding) {
+      if (segments[0] !== 'onboarding') router.replace('/onboarding');
+      return;
+    }
+    if (inAuthGroup) {
       const next = pendingPath;
       pendingPath = null;
       router.replace(next || '/(tabs)');
-    } else if (session && profile && profile.onboarded === false && segments[0] !== 'onboarding') {
-      // New account: pick interests first, so the feed is personal from day one.
-      // (Databases without 29_growth.sql have no `onboarded` — undefined skips this.)
-      router.replace('/onboarding');
     }
-  }, [session, profile, loading, segments, pathname]);
+  }, [uid, profileReady, needsOnboarding, loading, segments, pathname]);
+}
+
+// Wraps every screen of the root stack (Stack's screenLayout).
+//  • Nothing behind the login is mounted until we know who's signed in and
+//    have their profile — no feed fetching for a moment before the redirect
+//    to /onboarding (or to the login).
+//  • A language change re-draws the screens in place: keyed by locale, the
+//    screen content re-mounts, while the providers above (auth, badges,
+//    realtime) and the navigation stack stay. Login, sign-up and onboarding
+//    re-render through useLocale() instead, so typed text and the current
+//    step survive the switch.
+const NO_REMOUNT = new Set(['(auth)', 'onboarding']);
+
+function Blank() {
+  return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+}
+
+function ScreenGate({ name, children }) {
+  const { uid, profile, profileReady } = useAuth();
+  const { locale } = useLocale();
+  if (!PUBLIC_ROUTES.includes(name)) {
+    if (!uid || !profileReady) return <Blank />;
+    if (profile?.onboarded === false && name !== 'onboarding') return <Blank />;
+  }
+  // Web has no native screen animation, so screens softly fade in instead of
+  // popping. (Phones use the native slide, see the Stack's screenOptions.)
+  const body = Platform.OS === 'web' ? <FadeIn>{children}</FadeIn> : children;
+  if (NO_REMOUNT.has(name)) return body;
+  return <React.Fragment key={locale}>{body}</React.Fragment>;
+}
+
+const screenLayout = ({ route, children }) => <ScreenGate name={route.name}>{children}</ScreenGate>;
+
+// Re-mounting the screens on a language change can, in rare cases, drop a
+// nested navigator's position (e.g. which tab was open). Put it back.
+function navShape(state) {
+  if (!state || !Array.isArray(state.routes)) return null;
+  return {
+    i: state.index ?? 0,
+    r: state.routes.map((r) => [r.name, r.params ? JSON.stringify(r.params) : '', navShape(r.state)]),
+  };
+}
+
+function useKeepNavigationOnLocaleChange(locale) {
+  const nav = useNavigationContainerRef();
+  const prev = useRef(locale);
+  const snapshot = useRef(null);
+  if (prev.current !== locale) {
+    prev.current = locale;
+    try { snapshot.current = nav?.getRootState?.() ?? null; } catch { snapshot.current = null; }
+  }
+  useEffect(() => {
+    const before = snapshot.current;
+    snapshot.current = null;
+    if (!before) return undefined;
+    const timer = setTimeout(() => {
+      try {
+        const now = nav?.getRootState?.();
+        if (now && JSON.stringify(navShape(now)) !== JSON.stringify(navShape(before))) nav.resetRoot(before);
+      } catch { /* leave it as it is */ }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [locale, nav]);
 }
 
 function RootNavigator() {
   const { loading } = useAuth();
+  // Consumed here so a language change re-renders the header titles below and
+  // the overlays (toasts, banners) — without re-mounting any provider.
+  const { locale } = useLocale();
   useProtectedRoute();
+  useKeepNavigationOnLocaleChange(locale);
   useAudioUnlock();
   useHideSplash(loading);
 
@@ -148,8 +226,12 @@ function RootNavigator() {
     {/* Dark icons on the light app background (no-op on web). */}
     <StatusBar style={isDark ? 'light' : 'dark'} />
     <Stack
+      screenLayout={screenLayout}
       screenOptions={{
         headerShown: false,
+        // One slide on both phones (Android's default is a different, bottom
+        // fade); none at all with "Reduce motion".
+        animation: prefersReducedMotion() ? 'none' : (Platform.OS === 'android' ? 'slide_from_right' : 'default'),
         contentStyle: { backgroundColor: colors.bg },
         headerLeft: () => <HeaderBack />,
         headerBackVisible: false,
@@ -183,6 +265,7 @@ function RootNavigator() {
       <Stack.Screen name="team-apply/[postId]" options={{ headerShown: true, title: t('Apply as a team') }} />
       <Stack.Screen name="team/create" options={{ headerShown: true, title: t('Create team') }} />
       <Stack.Screen name="team/[id]" options={{ headerShown: true, title: t('Team') }} />
+      <Stack.Screen name="tournament/[postId]" options={{ headerShown: true, title: t('Teams & matches') }} />
       <Stack.Screen name="accepted/[postId]" options={{ headerShown: true, title: t('Accepted participants') }} />
       <Stack.Screen name="end/[postId]" options={{ headerShown: true, title: t('End event') }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
@@ -191,9 +274,12 @@ function RootNavigator() {
       <Stack.Screen name="dashboard" options={{ headerShown: true, title: t('Event stats') }} />
       <Stack.Screen name="settings" options={{ headerShown: true, title: t('Settings') }} />
       <Stack.Screen name="review/[postId]" options={{ headerShown: true, title: t('Rate this event') }} />
+      <Stack.Screen name="suggest" options={{ headerShown: true, title: t('Suggest an opportunity') }} />
+      <Stack.Screen name="admin/review" options={{ headerShown: true, title: t('Suggestions') }} />
     </Stack>
     <NotificationToast />
     <InstallPrompt />
+    <ToastHost />
     </View>
   );
 }
@@ -201,6 +287,8 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
+      {/* LocaleProvider only passes the language down (no re-keying), so a
+          switch never re-mounts auth or badges or their realtime channels. */}
       <LocaleProvider>
         <AuthProvider>
           <BadgeProvider>

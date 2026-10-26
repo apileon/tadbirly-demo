@@ -2,10 +2,10 @@ import React, { useCallback, useState } from 'react';
 import { View, FlatList, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { colors } from '../lib/theme';
+import { colors, column } from '../lib/theme';
 import { EmptyState, SectionHeader } from '../components/ui';
 import EventCard, { daysUntil } from '../components/EventCard';
-import { useSavedIds, toggleSaved, loadSaved } from '../lib/discover';
+import { useSavedIds, toggleSaved, loadSaved, seedPost } from '../lib/discover';
 import { t } from '../lib/i18n';
 
 // Bookmarked events: upcoming first, then the ones that have passed.
@@ -26,6 +26,7 @@ export default function Saved() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  const openPost = useCallback((p) => { seedPost(p); router.push(`/post/${p.id}`); }, [router]);
 
   if (posts === null) return <ActivityIndicator style={{ marginTop: 60 }} color={colors.brand} />;
 
@@ -44,6 +45,7 @@ export default function Saved() {
     <FlatList
       style={{ flex: 1, backgroundColor: colors.bg }}
       data={rows}
+      extraData={savedIds}
       keyExtractor={(r, i) => r.p?.id ?? `h${i}`}
       contentContainerStyle={styles.list}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.brand} />}
@@ -53,7 +55,9 @@ export default function Saved() {
           title={t('No saved events yet')}
           text={t("Tap the bookmark on any event to keep it here. We'll remind you the day before its deadline.")}
           action={t('Browse events')}
-          onAction={() => router.dismissTo('/')}
+          // '/(tabs)', not '/': from a stacked screen '/' resolves to the
+          // app/index.js redirect and stacks a second tab bar (lib/links.js).
+          onAction={() => router.dismissTo('/(tabs)')}
         />
       }
       renderItem={({ item }) => item.header ? (
@@ -63,8 +67,8 @@ export default function Saved() {
           <EventCard
             post={item.p}
             saved={savedIds.has(item.p.id)}
-            onSave={() => toggleSaved(item.p.id)}
-            onPress={() => router.push(`/post/${item.p.id}`)}
+            onSave={toggleSaved}
+            onPress={openPost}
           />
         </View>
       )}
@@ -73,5 +77,5 @@ export default function Saved() {
 }
 
 const styles = StyleSheet.create({
-  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 520, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 40, ...column },
 });

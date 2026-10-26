@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { notify, confirmAsync } from '../../lib/notify';
@@ -6,13 +6,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, CATEGORIES } from '../../lib/theme';
-import { Card, Button, Avatar, EmptyState, SectionHeader, Tag } from '../../components/ui';
+import { colors, radius, type, column, CATEGORIES } from '../../lib/theme';
+import { Card, Button, Avatar, EmptyState, SectionHeader, Segmented, StatusPill, reliabilityText } from '../../components/ui';
+import { formatEventWhen } from '../../lib/events';
 import { respondConnect, sendConnect } from '../../lib/social';
 import { respondTeam, pendingTeams, approveTeam, rejectTeam, deleteTeam, teamRoster } from '../../lib/teams';
 import { useBadges, requestsCount, teamsCount, eventsCount } from '../../lib/badges';
-import Dot from '../../components/Dot';
 import { t } from '../../lib/i18n';
+import { Pager } from '../../components/Motion';
 
 const SEGMENTS = ['events', 'networking', 'teams'];
 
@@ -33,6 +34,17 @@ export default function Portal() {
   const [tab, setTab] = useState(linked ?? 'events');
   useEffect(() => { if (linked) setTab(linked); }, [linked]);
 
+  // Teams are now made by organizers, so the Teams segment only stays for
+  // people who still have something waiting from the old student-built teams
+  // (an invite, a join request, a team to approve) or follow a link to it.
+  // Once shown it stays for the visit, so answering the last invite doesn't
+  // make the page jump.
+  const keepTeams = useRef(false);
+  if (teamsCount(badges) > 0 || linked === 'teams') keepTeams.current = true;
+  const showTeams = keepTeams.current;
+  const keys = showTeams ? SEGMENTS : SEGMENTS.filter((k) => k !== 'teams');
+  useEffect(() => { if (!showTeams && tab === 'teams') setTab('events'); }, [showTeams, tab]);
+
   // Tapping a segment moves the param along with it. Otherwise, after you
   // switch away by hand, a link to the segment in the param would change
   // nothing and be ignored. (On web the URL then also matches the screen.)
@@ -45,22 +57,23 @@ export default function Portal() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
       <View style={styles.head}>
         <Text style={styles.heading}>{t('Portal')}</Text>
-        <View style={styles.seg}>
-          <SegBtn icon="calendar-outline" label={t('Events')} on={tab === 'events'} onPress={() => choose('events')} n={eventsCount(badges)} />
-          <SegBtn icon="person-add-outline" label={t('Requests')} on={tab === 'networking'} onPress={() => choose('networking')} n={requestsCount(badges)} />
-          <SegBtn icon="people-outline" label={t('Teams')} on={tab === 'teams'} onPress={() => choose('teams')} n={teamsCount(badges)} />
-        </View>
+        <Segmented
+          style={{ marginTop: 12 }}
+          value={tab}
+          onChange={choose}
+          options={[
+            { key: 'events', icon: 'calendar-outline', label: t('Events'), n: eventsCount(badges) },
+            { key: 'networking', icon: 'person-add-outline', label: t('Requests'), n: requestsCount(badges) },
+            ...(showTeams ? [{ key: 'teams', icon: 'people-outline', label: t('Teams'), n: teamsCount(badges) }] : []),
+          ]}
+        />
       </View>
-      {/* All three stay mounted so switching is instant — no reload, no flicker. */}
-      <View style={{ flex: 1, display: tab === 'events' ? 'flex' : 'none' }}>
+      {/* The segments stay mounted (no reload); they slide, and you can swipe between them. */}
+      <Pager keys={keys} value={tab} onChange={choose}>
         <EventsDivision session={session} isOrg={isOrg} />
-      </View>
-      <View style={{ flex: 1, display: tab === 'networking' ? 'flex' : 'none' }}>
         <NetworkingDivision session={session} />
-      </View>
-      <View style={{ flex: 1, display: tab === 'teams' ? 'flex' : 'none' }}>
-        {isOrg ? <TeamApprovalDivision /> : <TeamsDivision session={session} />}
-      </View>
+        {showTeams ? (isOrg ? <TeamApprovalDivision /> : <TeamsDivision session={session} />) : null}
+      </Pager>
     </SafeAreaView>
   );
 }
@@ -181,14 +194,15 @@ function TeamsDivision({ session }) {
 
   const load = useCallback(async () => {
     if (!uid) return;
-    // Invites to me
-    const { data: inv } = await supabase
-      .from('team_members')
-      .select('*, team:teams(id, name, competition)')
-      .eq('user_id', uid).eq('status', 'invited');
+    // Invites to me and the teams I own, together; then join requests to those teams.
+    const [{ data: inv }, { data: myTeams }] = await Promise.all([
+      supabase
+        .from('team_members')
+        .select('*, team:teams(id, name, competition)')
+        .eq('user_id', uid).eq('status', 'invited'),
+      supabase.from('teams').select('id, name').eq('owner_id', uid),
+    ]);
     setInvites(inv ?? []);
-    // Join requests to teams I own
-    const { data: myTeams } = await supabase.from('teams').select('id, name').eq('owner_id', uid);
     const ids = (myTeams ?? []).map((tm) => tm.id);
     const tmap = {}; (myTeams ?? []).forEach((tm) => { tmap[tm.id] = tm.name; });
     if (ids.length) {
@@ -348,7 +362,7 @@ function EventsDivision({ session, isOrg }) {
                     <Reliability value={a.reliability} />
                   </View>
                 </View>
-                <StatusPill status={item.status} />
+                <StatusPill status={item.status} viewer="organizer" />
               </View>
               {a.bio ? <Text style={styles.bio}>“{a.bio}”</Text> : null}
               {item.status === 'pending' && (
@@ -408,7 +422,7 @@ function EventsDivision({ session, isOrg }) {
               <View style={{ flex: 1 }}>
                 <Text style={styles.name} numberOfLines={2}>{p.title ?? t('Post')}</Text>
                 {where || p.event_date ? (
-                  <Text style={styles.meta} numberOfLines={1}>{where}{p.event_date ? `${where ? ' · ' : ''}${p.event_date}` : ''}</Text>
+                  <Text style={styles.meta} numberOfLines={1}>{where}{p.event_date ? `${where ? ' · ' : ''}${formatEventWhen(p.event_date)}` : ''}</Text>
                 ) : null}
               </View>
               <StatusPill status={item.status} />
@@ -498,50 +512,19 @@ function NetworkingDivision({ session }) {
   );
 }
 
-function SegBtn({ icon, label, on, onPress, n = 0 }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={[styles.segBtn, on && styles.segBtnOn]}
-      accessibilityRole="tab"
-      accessibilityState={{ selected: !!on }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-        <Ionicons name={icon} size={15} color={on ? colors.onBrand : colors.muted} />
-        <Text style={[styles.segText, on && { color: colors.onBrand }]} numberOfLines={1}>{label}</Text>
-        <Dot n={n} plain />
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 function Reliability({ value }) {
   return (
     <>
       <Ionicons name="shield-checkmark-outline" size={12} color={colors.brand} />
-      <Text style={styles.meta}> {t('{n}% reliable', { n: value ?? 75 })}</Text>
+      <Text style={styles.meta}> {reliabilityText(value, { format: '{n}% reliable' })}</Text>
     </>
   );
 }
 
-function StatusPill({ status }) {
-  const map = {
-    pending: { label: t('Pending'), icon: 'time-outline', c: colors.warn, b: colors.warnSoft },
-    accepted: { label: t('Accepted'), icon: 'checkmark-circle', c: colors.brand, b: colors.brandSoft },
-    rejected: { label: t('Not selected'), icon: 'close-circle-outline', c: colors.danger, b: colors.dangerSoft },
-  };
-  const s = map[status] ?? map.pending;
-  return <Tag label={s.label} icon={s.icon} color={s.c} soft={s.b} />;
-}
-
 const styles = StyleSheet.create({
-  head: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  head: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, ...column },
   heading: { ...type.h1 },
-  seg: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: radius.pill, padding: 4, marginTop: 12, borderWidth: 1, borderColor: colors.line },
-  segBtn: { flex: 1, paddingVertical: 9, paddingHorizontal: 6, borderRadius: radius.pill, alignItems: 'center' },
-  segBtnOn: { backgroundColor: colors.brand },
-  segText: { fontSize: 13, fontWeight: '700', color: colors.muted },
-  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 40, ...column },
   legend: { ...type.small, textAlign: 'center', marginBottom: 12 },
   event: { ...type.caption, color: colors.brand, textTransform: 'uppercase', marginBottom: 10 },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },

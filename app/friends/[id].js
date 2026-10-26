@@ -4,8 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius } from '../../lib/theme';
-import { Avatar, EmptyState, SectionHeader } from '../../components/ui';
+import { colors, radius, column } from '../../lib/theme';
+import { Avatar, EmptyState, SectionHeader, reliabilityText } from '../../components/ui';
 import { t } from '../../lib/i18n';
 import { SkeletonList } from '../../components/Skeleton';
 
@@ -67,7 +67,7 @@ export default function FriendsList() {
                 {item.university ? <Text style={styles.meta} numberOfLines={1}>{item.university} ·</Text> : null}
                 <Ionicons name="shield-checkmark-outline" size={12} color={colors.muted} />
                 <Text style={styles.meta}>
-                  {item.reliability ?? 75}%{mutualIds.has(item.id) ? ` · ${t('mutual')}` : ''}
+                  {reliabilityText(item.reliability)}{mutualIds.has(item.id) ? ` · ${t('mutual')}` : ''}
                 </Text>
               </View>
             </View>
@@ -80,7 +80,7 @@ export default function FriendsList() {
 }
 
 const styles = StyleSheet.create({
-  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 40, ...column },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 13, marginBottom: 10 },
   name: { fontSize: 15, fontWeight: '700', color: colors.ink },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },

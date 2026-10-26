@@ -5,11 +5,12 @@ import { notify } from '../../lib/notify';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, shadow } from '../../lib/theme';
-import { Button, Avatar, EmptyState, SectionHeader, Tag } from '../../components/ui';
+import { colors, radius, type, shadow, column } from '../../lib/theme';
+import { Button, Avatar, EmptyState, SectionHeader, StatusPill, reliabilityText } from '../../components/ui';
 import { openDirectChat } from '../../lib/social';
 import { acceptTeamApplication, rejectTeamApplication } from '../../lib/teams';
 import { requireRows } from '../../lib/events';
+import { isTeamEvent } from '../../lib/eventTeams';
 import { t } from '../../lib/i18n';
 
 export default function Applicants() {
@@ -23,22 +24,26 @@ export default function Applicants() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { data: p } = await supabase.from('posts').select('*').eq('id', postId).single();
+    // All three at once; row security limits what a non-organizer gets back,
+    // and the check below throws that away anyway.
+    const [{ data: p }, { data: ta }, { data }] = await Promise.all([
+      supabase.from('posts').select('*').eq('id', postId).single(),
+      supabase
+        .from('team_applications')
+        .select('*, team:teams(id, name, competition)')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('applications')
+        .select('*, applicant:profiles!applications_applicant_id_fkey(id, full_name, university, reliability, verified_student)')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: false }),
+    ]);
     setPost(p);
     // Organizer-only screen. A participant opening the link used to see their
     // own application here — with an Accept button.
-    if (!p || p.author_id !== uid) { setLoading(false); return; }
-    const { data: ta } = await supabase
-      .from('team_applications')
-      .select('*, team:teams(id, name, competition)')
-      .eq('post_id', postId)
-      .order('created_at', { ascending: false });
+    if (!p || p.author_id !== uid) { setTeamApps([]); setRows([]); setLoading(false); return; }
     setTeamApps(ta ?? []);
-    const { data } = await supabase
-      .from('applications')
-      .select('*, applicant:profiles!applications_applicant_id_fkey(id, full_name, university, reliability, verified_student)')
-      .eq('post_id', postId)
-      .order('created_at', { ascending: false });
     setRows(data ?? []);
     setLoading(false);
   }, [postId, uid]);
@@ -79,7 +84,9 @@ export default function Applicants() {
         <View style={styles.inner}>
           <Text style={styles.title}>{post?.title ?? t('Applicants')}</Text>
           <Text style={styles.sub}>
-            {total === 1
+            {teamApps.length === 0
+              ? (rows.length === 1 ? t('1 applicant') : t('{n} applicants', { n: rows.length }))
+              : total === 1
               ? t('{a} individual · {b} team application', { a: rows.length, b: teamApps.length })
               : t('{a} individual · {b} team applications', { a: rows.length, b: teamApps.length })}
           </Text>
@@ -87,7 +94,10 @@ export default function Applicants() {
             <Button title={t('Accepted')} icon="people-outline" variant="ghost" size="sm" style={{ flex: 1 }} onPress={() => router.push(`/accepted/${postId}`)} />
             <Button title={t('Medals')} icon="medal-outline" variant="ghost" size="sm" style={{ flex: 1 }} onPress={() => router.push(`/badge/${postId}`)} />
           </View>
-          <Button title={t('End event and send feedback')} icon="flag-outline" variant="primary" size="sm" style={{ marginTop: 8 }} onPress={() => router.push(`/end/${postId}`)} />
+          {isTeamEvent(post) && (
+            <Button title={t('Teams & matches')} icon="trophy-outline" variant="soft" size="sm" style={{ marginTop: 8 }} onPress={() => router.push(`/tournament/${postId}`)} />
+          )}
+          <Button title={t('End event & send feedback')} icon="flag-outline" variant="primary" size="sm" style={{ marginTop: 8 }} onPress={() => router.push(`/end/${postId}`)} />
         </View>
       </View>
       <FlatList
@@ -108,9 +118,7 @@ export default function Applicants() {
         ListEmptyComponent={
           <EmptyState
             icon="people-outline"
-            title={post?.team_mode === 'team' && teamApps.length === 0
-              ? t('No team applications yet. This event accepts teams only.')
-              : t('No applications yet.')}
+            title={t('No applications yet.')}
           />
         }
         renderItem={({ item }) => {
@@ -127,10 +135,10 @@ export default function Applicants() {
                   <View style={styles.metaRow}>
                     {a.university ? <Text style={styles.meta} numberOfLines={1}>{a.university}</Text> : null}
                     <Ionicons name="shield-checkmark" size={12} color={colors.brand} />
-                    <Text style={styles.meta}>{a.reliability ?? 75}%</Text>
+                    <Text style={styles.meta}>{reliabilityText(a.reliability)}</Text>
                   </View>
                 </View>
-                <StatusPill status={item.status} />
+                <StatusPill status={item.status} viewer="organizer" />
                 <Ionicons name="chevron-forward" size={17} color={colors.faint} />
               </TouchableOpacity>
 
@@ -203,7 +211,7 @@ function TeamAppCard({ app, postId, onChanged }) {
           <Text style={styles.name} numberOfLines={1}>{app.team?.name ?? t('Team')}</Text>
           <Text style={styles.meta} numberOfLines={1}>{app.team?.competition ?? t('Team application')}</Text>
         </View>
-        <StatusPill status={app.status} />
+        <StatusPill status={app.status} viewer="organizer" />
       </View>
       {app.message ? <Text style={styles.teamMsg}>“{app.message}”</Text> : null}
 
@@ -228,7 +236,7 @@ function TeamAppCard({ app, postId, onChanged }) {
                     <Text style={styles.meta} numberOfLines={1}>{[m.university, m.major].filter(Boolean).join(' · ')}</Text>
                   ) : null}
                   <Ionicons name="shield-checkmark" size={12} color={colors.brand} />
-                  <Text style={styles.meta}>{m.reliability ?? 75}%</Text>
+                  <Text style={styles.meta}>{reliabilityText(m.reliability)}</Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={17} color={colors.faint} accessibilityLabel={t('View')} />
@@ -247,16 +255,6 @@ function TeamAppCard({ app, postId, onChanged }) {
       ) : null}
     </View>
   );
-}
-
-function StatusPill({ status }) {
-  const map = {
-    pending: { label: t('Pending'), icon: 'time-outline', c: colors.warn, b: colors.warnSoft },
-    accepted: { label: t('Accepted'), icon: 'checkmark-circle', c: colors.accent, b: colors.accentSoft },
-    rejected: { label: t('Rejected'), icon: 'close-circle', c: colors.danger, b: colors.dangerSoft },
-  };
-  const s = map[status] ?? map.pending;
-  return <Tag label={s.label} icon={s.icon} color={s.c} soft={s.b} />;
 }
 
 // The applicant's answers to the organizer's questions (supabase/29).
@@ -282,8 +280,8 @@ const styles = StyleSheet.create({
   answerQ: { ...type.caption },
   answerA: { fontSize: 14, color: colors.ink, marginTop: 3, lineHeight: 20 },
   head: { backgroundColor: colors.card, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
-  inner: { width: '100%', maxWidth: 680, alignSelf: 'center' },
-  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  inner: { ...column },
+  list: { padding: 16, paddingBottom: 40, ...column },
   title: { ...type.h2 },
   sub: { ...type.small, marginTop: 2 },
   card: {

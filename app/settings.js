@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
-import { colors, radius, themePref, setThemePref } from '../lib/theme';
+import { colors, radius, themePref, setThemePref, column } from '../lib/theme';
 import { SectionHeader } from '../components/ui';
 import { notify } from '../lib/notify';
 import { t, LANGUAGES, useLocale } from '../lib/i18n';
@@ -83,7 +83,7 @@ function Row({ icon, label, on, onPress, last }) {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 620, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 40, ...column },
   group: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   label: { fontSize: 15, fontWeight: '600', color: colors.ink },

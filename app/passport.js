@@ -1,12 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { View, Text, TextInput, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { notify } from '../lib/notify';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
-import { colors, radius, type, shadow, awardMeta } from '../lib/theme';
-import { Button, Avatar, EmptyState, SectionHeader, TextField } from '../components/ui';
+import { colors, radius, type, shadow, column, awardMeta } from '../lib/theme';
+import { Button, Avatar, EmptyState, SectionHeader, TextField, reliabilityText } from '../components/ui';
 import { pickImage, uploadAvatar, canPickImage } from '../lib/news';
 import { t } from '../lib/i18n';
 
@@ -25,9 +25,27 @@ export default function Passport() {
   const [awards, setAwards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // True while there are typed-in changes not saved yet. Coming back to this
+  // screen (from the photo picker, another tab…) refetches, and that used to
+  // overwrite whatever had been typed.
+  const dirty = useRef(false);
 
   const load = useCallback(async () => {
-    const { data: p } = await supabase.from('profiles').select('*').eq('id', uid).single();
+    const [{ data: p }, { data: aw }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', uid).single(),
+      supabase
+        .from('awards')
+        .select('*, badge:badges(name, emoji), post:posts(title)')
+        .eq('recipient_id', uid)
+        .order('created_at', { ascending: false }),
+    ]);
+    setAwards(aw ?? []);
+    setLoading(false);
+    if (dirty.current) {
+      // Keep their edits; only the photo comes from the server.
+      setForm((f) => (f ? { ...f, avatar_url: p?.avatar_url ?? null } : f));
+      return;
+    }
     setForm({
       university: p?.university ?? '',
       major: p?.major ?? '',
@@ -45,13 +63,6 @@ export default function Passport() {
       linkedin: p?.linkedin ?? '',
       avatar_url: p?.avatar_url ?? null,
     });
-    const { data: aw } = await supabase
-      .from('awards')
-      .select('*, badge:badges(name, emoji), post:posts(title)')
-      .eq('recipient_id', uid)
-      .order('created_at', { ascending: false });
-    setAwards(aw ?? []);
-    setLoading(false);
   }, [uid]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -79,6 +90,7 @@ export default function Passport() {
     const { error } = await supabase.from('profiles').update(patch).eq('id', uid);
     setSaving(false);
     if (error) return notify(t('Could not save'), error.message);
+    dirty.current = false;
     // Show the scores as stored ("6,5" typed -> "6.5" saved).
     setForm((f) => ({ ...f, ielts: patch.ielts ?? '', sat: patch.sat ?? '', act: patch.act ?? '' }));
     await refreshProfile();
@@ -102,7 +114,8 @@ export default function Passport() {
   }
 
   async function removePhoto() {
-    await supabase.from('profiles').update({ avatar_url: null }).eq('id', uid);
+    const { error } = await supabase.from('profiles').update({ avatar_url: null }).eq('id', uid);
+    if (error) return notify(t('Could not remove'), error.message);
     setForm((f) => ({ ...f, avatar_url: null }));
     await refreshProfile();
   }
@@ -122,7 +135,7 @@ export default function Passport() {
 
   const verified = awards.filter((a) => a.verified).length;
   const pinnedCount = awards.filter((a) => a.pinned).length;
-  const set = (key) => (v) => setForm({ ...form, [key]: v });
+  const set = (key) => (v) => { dirty.current = true; setForm((f) => ({ ...f, [key]: v })); };
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
@@ -150,7 +163,7 @@ export default function Passport() {
 
       {/* Reputation header */}
       <View style={styles.repRow}>
-        <Rep icon="shield-checkmark-outline" value={`${profile?.reliability ?? 75}%`} label={t('Reliability')} />
+        <Rep icon="shield-checkmark-outline" value={reliabilityText(profile?.reliability, { hasHistory: verified > 0 })} label={t('Reliability')} />
         <Rep icon="checkmark-circle-outline" value={verified} label={t('Verified events')} />
         <Rep icon="pin-outline" value={pinnedCount + '/5'} label={t('Pinned')} />
       </View>
@@ -243,7 +256,7 @@ export default function Passport() {
           </View>
           <View style={{ flex: 1 }} />
         </View>
-        <MilliyPicker value={form.milliy} onChange={(v) => setForm({ ...form, milliy: v })} />
+        <MilliyPicker value={form.milliy} onChange={set('milliy')} />
       </View>
 
       <SectionHeader title={t('Contact')} style={{ marginTop: 24, marginBottom: 4 }} />
@@ -355,7 +368,7 @@ function Rep({ icon, value, label }) {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 50, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 50, ...column },
   card: {
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg,
     padding: 16, marginBottom: 12, ...shadow.sm,
@@ -395,8 +408,7 @@ const styles = StyleSheet.create({
   sticky: {
     backgroundColor: colors.warnSoft, borderRadius: radius.sm, padding: 16, minHeight: 110,
     borderWidth: 1, borderColor: colors.line,
-    transform: [{ rotate: '-1deg' }],
-    ...shadow.md,
+    ...shadow.sm,
   },
   stickyInput: {
     fontSize: 15, lineHeight: 22, color: colors.ink, minHeight: 80, textAlignVertical: 'top', fontStyle: 'italic',

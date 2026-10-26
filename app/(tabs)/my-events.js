@@ -1,33 +1,41 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
+import { useCachedQuery } from '../../lib/cache';
+import { formatEventWhen } from '../../lib/events';
+import { SkeletonList } from '../../components/Skeleton';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, shadow, CATEGORIES, typeMeta } from '../../lib/theme';
+import { colors, radius, type, shadow, column, CATEGORIES, typeMeta } from '../../lib/theme';
 import { EmptyState } from '../../components/ui';
 import { t } from '../../lib/i18n';
 
 export default function MyEvents() {
   const { session } = useAuth();
   const router = useRouter();
-  const [rows, setRows] = useState([]);
+  const uid = session?.user?.id;
 
-  const load = useCallback(async () => {
-    if (!session?.user?.id) return;
-    const { data } = await supabase
+  // Cached per user: revisiting the tab shows the list at once and refreshes
+  // it behind your back (lib/cache).
+  const fetchRows = useCallback(async () => {
+    if (!uid) return undefined;
+    const { data, error } = await supabase
       .from('posts')
       .select('*, applications(count)')
-      .eq('author_id', session.user.id)
+      .eq('author_id', uid)
       .order('created_at', { ascending: false });
-    setRows(data ?? []);
-  }, [session]);
-
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+    return error ? undefined : (data ?? []);
+  }, [uid]);
+  const { data, loading } = useCachedQuery(uid ? `my-events:${uid}` : null, fetchRows);
+  const rows = data ?? [];
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
+      {loading ? (
+        <View style={styles.list}><Text style={styles.heading}>{t('My events')}</Text><SkeletonList count={3} type="row" /></View>
+      ) : (
       <FlatList
         data={rows}
         keyExtractor={(p) => p.id}
@@ -59,7 +67,7 @@ export default function MyEvents() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
                   {where || item.event_date ? (
-                    <Text style={styles.meta} numberOfLines={1}>{where}{item.event_date ? `${where ? ' · ' : ''}${item.event_date}` : ''}</Text>
+                    <Text style={styles.meta} numberOfLines={1}>{where}{item.event_date ? `${where ? ' · ' : ''}${formatEventWhen(item.event_date)}` : ''}</Text>
                   ) : null}
                 </View>
                 {done && (
@@ -81,12 +89,13 @@ export default function MyEvents() {
           );
         }}
       />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 40, ...column },
   heading: { ...type.h1, paddingTop: 2, marginBottom: 14 },
   card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 14, marginBottom: 12, ...shadow.sm },
   head: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },

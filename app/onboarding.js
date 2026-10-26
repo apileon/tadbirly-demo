@@ -8,12 +8,14 @@ import { useAuth } from '../lib/auth';
 import { colors, radius, type, EVENT_TYPES, CITIES } from '../lib/theme';
 import { Button, Logo } from '../components/ui';
 import { notify } from '../lib/notify';
-import { t, LANGUAGES, useLocale } from '../lib/i18n';
+import { t, LANGUAGES, useLocale, hasChosenLocale } from '../lib/i18n';
 import { invalidate } from '../lib/cache';
 
 const INTERESTS = EVENT_TYPES.filter((e) => e.key !== 'Other');
 
-// Three quick steps after sign-up: language, interests, city. Opened again
+// Three quick steps after sign-up: language, interests, city. The language
+// step is skipped when one was already picked (the switch on the login /
+// sign-up screen, or a choice saved earlier on this device). Opened again
 // with ?edit=1 (Feed tip, Settings) to change interests later.
 export default function Onboarding() {
   const router = useRouter();
@@ -21,7 +23,9 @@ export default function Onboarding() {
   const editing = edit === '1';
   const { session, profile, refreshProfile } = useAuth();
   const { locale, setLocale } = useLocale();
-  const [step, setStep] = useState(editing ? 1 : 0);
+  // Decided once, on arrival: picking a language on step 0 mustn't skip it.
+  const [skipLanguage] = useState(() => editing || hasChosenLocale());
+  const [step, setStep] = useState(skipLanguage ? 1 : 0);
   const [interests, setInterests] = useState(profile?.interests ?? []);
   const [city, setCity] = useState(profile?.city ?? 'Tashkent');
   const [busy, setBusy] = useState(false);
@@ -49,8 +53,8 @@ export default function Onboarding() {
     else router.replace('/(tabs)');
   }
 
-  const steps = editing ? 2 : 3;
-  const shown = editing ? step : step + 1;
+  const steps = skipLanguage ? 2 : 3;
+  const shown = skipLanguage ? step : step + 1;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>

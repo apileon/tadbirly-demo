@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, shadow } from '../../lib/theme';
+import { colors, radius, type, shadow, column } from '../../lib/theme';
 import { Button, SectionHeader, EmptyState, Avatar } from '../../components/ui';
 import { requestJoin, TEAM_STATUS, skillMatches } from '../../lib/teams';
 import { t } from '../../lib/i18n';
@@ -120,7 +120,7 @@ export default function TeamBuilder() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.name} numberOfLines={2}>{item.name}</Text>
                 <Text style={styles.meta} numberOfLines={1}>
-                  {item.competition ?? t('Competition')}{item.spots ? ` · ${item.spots} spots` : ''}
+                  {item.competition ?? t('Competition')}{item.spots ? ` · ${item.spots === 1 ? t('1 spot') : t('{n} spots', { n: item.spots })}` : ''}
                 </Text>
               </View>
               <TouchableOpacity
@@ -172,7 +172,7 @@ export default function TeamBuilder() {
 }
 
 const styles = StyleSheet.create({
-  list: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: MAX_W, alignSelf: 'center' },
+  list: { padding: 16, paddingBottom: 40, ...column },
   head: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
   sub: { ...type.small, marginTop: 4 },
   card: { backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: 14, marginBottom: 12, ...shadow.sm },

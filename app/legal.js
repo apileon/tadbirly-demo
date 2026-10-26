@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, type } from '../lib/theme';
-import { Button } from '../components/ui';
+import { colors, radius, type, column } from '../lib/theme';
+import { Button, Section as UISection } from '../components/ui';
 import { useAuth } from '../lib/auth';
 import { deleteAccount } from '../lib/moderation';
 import { notify, confirmAsync } from '../lib/notify';
@@ -41,13 +41,9 @@ function Mail({ subject }) {
   return <A onPress={() => mail(subject)}>{SUPPORT_EMAIL}</A>;
 }
 
+// The shared card section, with the brand-coloured headings of a document.
 function Section({ title, children }) {
-  return (
-    <View style={s.section}>
-      <Text style={s.sectionTitle}>{title}</Text>
-      {children}
-    </View>
-  );
+  return <UISection title={title} titleStyle={s.sectionTitle}>{children}</UISection>;
 }
 const P = ({ children }) => <Text style={s.p}>{children}</Text>;
 const H = ({ children }) => <Text style={s.h3}>{children}</Text>;
@@ -267,11 +263,10 @@ export default function Legal() {
 }
 
 const s = StyleSheet.create({
-  page: { padding: 18, paddingBottom: 40, width: '100%', maxWidth: 760, alignSelf: 'center' },
+  page: { padding: 18, paddingBottom: 40, ...column },
   h1: { ...type.h1, marginBottom: 6 },
   updated: { ...type.small, fontSize: 12, marginBottom: 12 },
-  section: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 16, marginBottom: 12 },
-  sectionTitle: { ...type.caption, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: 0.8, color: colors.brand, fontWeight: '800', marginBottom: 8 },
+  sectionTitle: { fontSize: 12.5, color: colors.brand, fontWeight: '800' },
   h3: { fontSize: 14, fontWeight: '800', color: colors.ink, marginTop: 12, marginBottom: 6 },
   p: { fontSize: 13.5, lineHeight: 21, color: colors.body, marginBottom: 6 },
   b: { fontWeight: '800', color: colors.ink },

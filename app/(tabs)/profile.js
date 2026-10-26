@@ -10,8 +10,10 @@ import { promptPush, pushDebug, openPushSettings } from '../../lib/push';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, type, shadow, awardMeta, isDark, setThemePref } from '../../lib/theme';
-import { Button, Avatar, SectionHeader } from '../../components/ui';
+import { colors, radius, type, shadow, column, awardMeta, isDark, setThemePref } from '../../lib/theme';
+import { Button, Avatar, SectionHeader, reliabilityText } from '../../components/ui';
+import { formatEventWhen } from '../../lib/events';
+import { getCoachStatusCached, peekCoachStatus } from '../../lib/coach';
 import { sharedStreak } from '../../lib/social';
 import { pickImage, uploadAvatar, canPickImage, pickAndUpload } from '../../lib/news';
 import { notify, confirmAsync } from '../../lib/notify';
@@ -40,6 +42,16 @@ function pushStatusLine(d, uid) {
   return t('This device: allowed · {state} · {linked}', { state: subscribed ? t('subscribed') : t('not subscribed'), linked });
 }
 
+// The three diagnostic lines behind the status line (tap it to see them).
+function pushDetails(d, uid, permissionLine) {
+  const PERM = { granted: t('allowed'), denied: t('blocked'), default: t('not asked yet'), unsupported: t('not supported') };
+  return [
+    permissionLine.replace('{v}', PERM[d.nativePermission] ?? String(d.nativePermission ?? '?')),
+    t('Subscription: {v}', { v: d.subscriptionId ? `${d.subscriptionId}${d.optedIn ? ` (${t('opted in')})` : ''}` : t('none') }),
+    t('Linked to: {v}', { v: d.externalId ? (String(d.externalId) === String(uid) ? t('this account') : t('another account')) : t('no account') }),
+  ].join('\n');
+}
+
 export default function Profile() {
   const router = useRouter();
   const { profile, session, signOut, refreshProfile } = useAuth();
@@ -48,9 +60,18 @@ export default function Profile() {
   const [notifState, setNotifState] = useState(notificationState());
   const [notifBusy, setNotifBusy] = useState(false);
   const [pushInfo, setPushInfo] = useState(null);
+  // Coach availability, asked once per session (lib/coach caches it).
+  const [coachSoon, setCoachSoon] = useState(() => peekCoachStatus()?.code === 'not_configured');
   const isOrg = profile?.role === 'organizer';
 
   const uid = session?.user?.id;
+
+  useEffect(() => {
+    if (!uid) return undefined;
+    let alive = true;
+    getCoachStatusCached().then((r) => { if (alive) setCoachSoon(!r.ok && r.code === 'not_configured'); }, () => {});
+    return () => { alive = false; };
+  }, [uid]);
 
   // Re-read on every visit: permission can change in browser settings, and
   // the launch-time repair in lib/push.js may have finished since.
@@ -219,15 +240,24 @@ export default function Profile() {
           <Stat
             icon="trophy-outline"
             value={ranked ? `#${stats.place}` : '—'}
-            label={`${stats.points} pts`}
+            label={t('{n} pts', { n: stats.points })}
             onPress={() => router.push('/leaderboard')}
           />
           <View style={styles.statDivider} />
           <Stat icon="people-outline" value={stats.friends} label={t('Friends')} onPress={() => uid && router.push(`/friends/${uid}`)} />
           <View style={styles.statDivider} />
-          <Stat icon="flame-outline" value={stats.bestStreak} label={t('Best streak')} />
-          <View style={styles.statDivider} />
-          <Stat icon="shield-checkmark-outline" value={`${profile?.reliability ?? 75}%`} label={t('Reliability')} />
+          {/* A best streak of 0 says nothing: it shows once there is one. */}
+          {stats.bestStreak > 0 ? (
+            <>
+              <Stat icon="flame-outline" value={stats.bestStreak} label={t('Best streak')} />
+              <View style={styles.statDivider} />
+            </>
+          ) : null}
+          <Stat
+            icon="shield-checkmark-outline"
+            value={reliabilityText(profile?.reliability, { hasHistory: stats.attended > 0 })}
+            label={t('Reliability')}
+          />
         </View>
 
         <View style={styles.statsCard}>
@@ -292,7 +322,7 @@ export default function Profile() {
                       <View style={styles.menuIcon}><Ionicons name="calendar-outline" size={17} color={colors.brand} /></View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.menuText} numberOfLines={1}>{e.title}</Text>
-                        <Text style={styles.menuSub}>{e.event_date ?? t('No date')}</Text>
+                        <Text style={styles.menuSub}>{e.event_date ? formatEventWhen(e.event_date) : t('No date')}</Text>
                       </View>
                       {done && <Text style={styles.finished}>{t('Finished')}</Text>}
                       <Ionicons name="chevron-forward" size={17} color={colors.faint} />
@@ -308,7 +338,7 @@ export default function Profile() {
         <View style={styles.menu}>
           <MenuRow icon="bookmark-outline" label={t('Saved events')} sub={t('Bookmarks and deadline reminders')} onPress={() => router.push('/saved')} />
           {isOrg && <MenuRow icon="stats-chart-outline" label={t('Event stats')} sub={t('Views, applications, check-ins, ratings')} onPress={() => router.push('/dashboard')} />}
-          <MenuRow icon="compass-outline" label={t('AI Career Coach')} sub={t('A suggestion for your next event')} onPress={() => router.push('/coach')} last />
+          <MenuRow icon="compass-outline" label={t('AI Career Coach')} sub={t('A suggestion for your next event')} tag={coachSoon ? t('Soon') : null} onPress={() => router.push('/coach')} last />
         </View>
         {!isOrg && (
           <Text style={styles.orgHint}>{t('Want to host events? Ask a Tadbirly admin to unlock organizer access.')}</Text>
@@ -368,11 +398,7 @@ export default function Profile() {
             {pushStatusLine(pushInfo, uid) ? (
               <Text
                 style={styles.pushStatus}
-                onPress={() => pushInfo && notify(t('Notification status'), [
-                  `Browser permission: ${pushInfo.nativePermission}`,
-                  `Subscription: ${pushInfo.subscriptionId || 'none'}${pushInfo.optedIn ? ' (opted in)' : ''}`,
-                  `Linked to: ${pushInfo.externalId ? (String(pushInfo.externalId) === String(uid) ? 'this account' : 'another account') : 'no account'}`,
-                ].join('\n'))}
+                onPress={() => pushInfo && notify(t('Notification status'), pushDetails(pushInfo, uid, t('Browser permission: {v}')))}
               >
                 {pushStatusLine(pushInfo, uid)}
               </Text>
@@ -476,11 +502,7 @@ function NativePushSection({ uid, info, setInfo }) {
       {line ? (
         <Text
           style={styles.pushStatus}
-          onPress={() => info && notify(t('Notification status'), [
-            `Permission: ${info.nativePermission}`,
-            `Subscription: ${info.subscriptionId || 'none'}${info.optedIn ? ' (opted in)' : ''}`,
-            `Linked to: ${info.externalId ? (String(info.externalId) === String(uid) ? 'this account' : 'another account') : 'no account'}`,
-          ].join('\n'))}
+          onPress={() => info && notify(t('Notification status'), pushDetails(info, uid, t('Permission: {v}')))}
         >
           {line}
         </Text>
@@ -539,14 +561,17 @@ function DarkModeRow() {
   );
 }
 
-function MenuRow({ icon, label, sub, onPress, danger, last }) {
+function MenuRow({ icon, label, sub, onPress, danger, last, tag }) {
   return (
     <TouchableOpacity style={[styles.menuRow, last && { borderBottomWidth: 0 }]} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.menuIcon, danger && { backgroundColor: colors.dangerSoft }]}>
         <Ionicons name={icon} size={17} color={danger ? colors.danger : colors.brand} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.menuText, danger && { color: colors.danger }]}>{label}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={[styles.menuText, danger && { color: colors.danger }, { flexShrink: 1 }]}>{label}</Text>
+          {tag ? <Text style={styles.menuTag}>{tag}</Text> : null}
+        </View>
         {sub ? <Text style={styles.menuSub}>{sub}</Text> : null}
       </View>
       {!danger && <Ionicons name="chevron-forward" size={17} color={colors.faint} />}
@@ -813,7 +838,7 @@ function TelegramCard({ uid }) {
 }
 
 const styles = StyleSheet.create({
-  page: { paddingHorizontal: 16, paddingBottom: 60, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  page: { paddingHorizontal: 16, paddingBottom: 60, ...column },
   banner: { height: 120, marginHorizontal: -16, backgroundColor: colors.brand, overflow: 'hidden' },
   // Top of the banner, clear of the avatar that overlaps the bottom edge.
   bannerBtns: { position: 'absolute', right: 12, top: 10, flexDirection: 'row', gap: 8 },
@@ -851,6 +876,7 @@ const styles = StyleSheet.create({
   menuIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
   menuText: { fontSize: 15, fontWeight: '600', color: colors.ink },
   menuSub: { fontSize: 12.5, color: colors.muted, marginTop: 1 },
+  menuTag: { fontSize: 10.5, fontWeight: '800', color: colors.warn, backgroundColor: colors.warnSoft, paddingVertical: 2, paddingHorizontal: 7, borderRadius: 999, overflow: 'hidden', letterSpacing: 0.3 },
   finished: { fontSize: 11, fontWeight: '700', color: colors.muted, backgroundColor: colors.bg, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 999, overflow: 'hidden' },
   pushStatus: { fontSize: 11.5, color: colors.muted, textAlign: 'center', marginTop: 6, lineHeight: 16 },
   tgCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: 16, marginTop: 12 },

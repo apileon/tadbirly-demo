@@ -5,7 +5,7 @@ import { notify, confirmAsync } from '../../lib/notify';
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type, shadow } from '../../lib/theme';
+import { colors, radius, type, shadow, column } from '../../lib/theme';
 import { Button, Avatar, EmptyState, SectionHeader, Tag, TextField } from '../../components/ui';
 import { inviteToTeam, approveTeam, rejectTeam, deleteTeam, respondTeam } from '../../lib/teams';
 import { useReportSheet } from '../../lib/moderation';
@@ -323,7 +323,7 @@ export default function TeamDetail() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 40, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: 40, ...column },
   hero: {
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg,
     padding: 16, ...shadow.sm,

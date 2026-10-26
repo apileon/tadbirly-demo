@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../lib/theme';
+import { colors, column } from '../lib/theme';
 import { Button, Logo } from '../components/ui';
 import { useAuth } from '../lib/auth';
 import { LegalDocument } from './legal';
@@ -30,7 +30,7 @@ export default function PrivacyPage() {
 }
 
 const s = StyleSheet.create({
-  page: { padding: 18, paddingBottom: 40, width: '100%', maxWidth: 760, alignSelf: 'center' },
+  page: { padding: 18, paddingBottom: 40, ...column },
   top: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   h1: { flex: 1, fontSize: 19, fontWeight: '800', color: colors.ink },
 });

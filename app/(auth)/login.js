@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { Button, Logo, Wordmark, TextField } from '../../components/ui';
 import { colors, radius, type, shadow } from '../../lib/theme';
-import { t } from '../../lib/i18n';
+import { t, useLocale, LanguageSwitch } from '../../lib/i18n';
 
 export default function Login() {
+  useLocale(); // re-render in place when the language changes (typed text stays)
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -79,13 +82,15 @@ export default function Login() {
           </Text>
         </View>
       </ScrollView>
+      <LanguageSwitch style={[styles.lang, { top: insets.top + 12 }]} />
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20, paddingVertical: 40 },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20, paddingTop: 64, paddingBottom: 40 },
+  lang: { position: 'absolute', right: 16 },
   column: { width: '100%', maxWidth: 420, alignSelf: 'center' },
   brandBlock: { alignItems: 'center', marginBottom: 28 },
   tag: { ...type.small, fontSize: 14, marginTop: 8, textAlign: 'center' },

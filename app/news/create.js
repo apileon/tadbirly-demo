@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type } from '../../lib/theme';
+import { colors, radius, type, column } from '../../lib/theme';
 import { Button, TextField } from '../../components/ui';
 import { notify } from '../../lib/notify';
 import { pickImage, uploadNewsImage, canPickImage, releasePreview } from '../../lib/news';
@@ -83,7 +83,7 @@ export default function CreateNews() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 18, paddingBottom: 40, width: '100%', maxWidth: 640, alignSelf: 'center' },
+  page: { padding: 18, paddingBottom: 40, ...column },
   h1: { ...type.h1 },
   sub: { ...type.small, marginTop: 6, lineHeight: 20 },
   label: { ...type.label, marginTop: 18, marginBottom: 7 },

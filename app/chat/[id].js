@@ -7,7 +7,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
-import { colors, radius, type } from '../../lib/theme';
+import { colors, radius, type, column } from '../../lib/theme';
 import { Avatar, Button, IconButton, EmptyState } from '../../components/ui';
 import { sharedStreak } from '../../lib/social';
 import { confirmAsync, notify } from '../../lib/notify';
@@ -132,6 +132,9 @@ export default function ChatRoom() {
   const { session } = useAuth();
   const uid = session?.user?.id;
   const [messages, setMessages] = useState([]);
+  // Ids on screen, read by the realtime DELETE listener without resubscribing.
+  const shownIdsRef = useRef(new Set());
+  shownIdsRef.current = new Set(messages.map((m) => m.id));
   const [text, setText] = useState('');
   const [header, setHeader] = useState({ name: '', streak: 0, otherId: null, avatar: null });
   const router = useRouter();
@@ -204,10 +207,14 @@ export default function ChatRoom() {
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `chat_id=eq.${id}` },
         (payload) => setMessages((prev) => prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m))))
+      // A DELETE only carries the row's id (no chat_id to filter on), so it
+      // arrives for every chat: act only on ids this chat actually shows.
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' },
         (payload) => {
+          const gone = payload.old?.id;
+          if (!gone || !shownIdsRef.current.has(gone)) return;
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setMessages((prev) => prev.filter((m) => m.id !== payload.old?.id));
+          setMessages((prev) => prev.filter((m) => m.id !== gone));
         })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -511,7 +518,7 @@ function dayLabel(iso) {
 const STAMP_MINE = 'rgba(255,255,255,0.7)';
 
 const styles = StyleSheet.create({
-  list: { padding: 16, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  list: { padding: 16, ...column },
   dayRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 14 },
   dayLine: { flex: 1, height: 1, backgroundColor: colors.line },
   dayText: { ...type.caption },
